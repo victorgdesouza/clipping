@@ -1,0 +1,40 @@
+{# reports_app/templates/reports_app/monthly.html #}
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Relatório Mensal – Cliente {{ view.kwargs.client_id }}</h1>
+<p>Ano/Mês: {{ view.kwargs.year }}/{{ view.kwargs.month }}</p>
+
+<h2>Overview</h2>
+<ul>
+  {% for tipo, qtd in totals.items %}
+    <li>{{ tipo }}: {{ qtd }}</li>
+  {% endfor %}
+</ul>
+
+<h2>Por canal de mídia</h2>
+<ul>
+  {% for row in by_media %}
+    <li>{{ row.media_channel }}: {{ row.n }}</li>
+  {% endfor %}
+</ul>
+
+<p><strong>Valoração total:</strong> {{ valor_total }} cm</p>
+
+<h2>Entradas Detalhadas</h2>
+<table>
+  <thead><tr>
+    <th>Data</th><th>Título</th><th>Fonte</th><th>Valor (cm)</th>
+  </tr></thead>
+  <tbody>
+  {% for entry in entries %}
+    <tr>
+      <td>{{ entry.published_at|date:"Y-m-d" }}</td>
+      <td><a href="{{ entry.article.url }}">{{ entry.article.title }}</a></td>
+      <td>{{ entry.media_channel }}</td>
+      <td>{{ entry.valor_cm }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
