@@ -1,0 +1,11 @@
+# ignorar virtualenv
+venv/
+# ignorar modelos locais
+models/
+*.gguf
+
+# ignorar banco local
+db.sqlite3
+
+# ignorar configs de IDE
+*.log
