@@ -1,0 +1,270 @@
+{# templates/newsclip/client_news.html #}
+{% extends "base.html" %}
+{% load source_extras %}
+
+{% block title %}Notícias de {{ client.name }}{% endblock title %}
+
+{% block content %}
+  <h1 class="page-title">Notícias de {{ client.name }}</h1>
+
+  <div class="action-bar">
+    <a class="button" href="{% url 'dashboard' %}">← Dashboard</a>
+    <a class="button" href="{% url 'client_reports' client.id %}">Relatórios</a>
+    <button id="btn-fetch-news" class="button button-secondary">
+      Buscar notícias
+    </button>
+  </div>
+
+  <!-- overlay full-screen -->
+   <!-- seu overlay -->
+   <div id="loading-overlay">…</div>
+
+   <!-- AQUI: cole este bloco -->
+   <script>
+     // helper para ler o CSRF do cookie
+     function getCookie(name) {
+       let v = null;
+       document.cookie.split(';').forEach(c => {
+         c = c.trim();
+         if (c.startsWith(name + '=')) {
+           v = decodeURIComponent(c.slice(name.length + 1));
+         }
+       });
+       return v;
+     }
+ 
+     const btnFetch = document.getElementById('btn-fetch-news');
+     const overlay  = document.getElementById('loading-overlay');
+ 
+     btnFetch.addEventListener('click', e => {
+       e.preventDefault();
+       // 1) desabilita o botão e mostra overlay
+       btnFetch.disabled = true;
+       overlay.style.display = 'flex';
+ 
+       // 2) dispara POST para sua view fetch_news
+       fetch("{% url 'fetch_news' client.id %}", {
+         method: 'POST',
+         headers: {
+           'X-CSRFToken': getCookie('csrftoken'),
+           'X-Requested-With': 'XMLHttpRequest'
+         }
+       })
+       .then(response => {
+         // se a view redirecionar, navega até lá
+         if (response.redirected) {
+           window.location.href = response.url;
+         } else {
+           // senão, recarrega a página atual
+           window.location.reload();
+         }
+       })
+       .catch(err => {
+         alert('Falha ao buscar notícias.');
+         console.error(err);
+         btnFetch.disabled = false;
+         overlay.style.display = 'none';
+       });
+     });
+    </script>
+
+  {# ─── FILTROS ──────────────────────────────────────── #}
+  <form method="get" class="filter-form">
+    <div class="filter-group">
+      <label for="sort">Ordenar por:</label>
+      <select id="sort" name="sort">
+        <option value="date-desc" {% if sort == "date-desc" %}selected{% endif %}>Data (mais recente)</option>
+        <option value="date-asc"  {% if sort == "date-asc"  %}selected{% endif %}>Data (mais antiga)</option>
+        <option value="source"    {% if sort == "source"    %}selected{% endif %}>Fonte</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="source">Fonte:</label>
+      <select id="source" name="source">
+        <option value="">Todas as fontes</option>
+        {% for src in sources %}
+          <option value="{{ src }}" {% if selected_source == src %}selected{% endif %}>{{ src }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="button">Aplicar filtros</button>
+  </form>
+
+  {# ─── SELECTOR DE QUANTOS POR PÁGINA ──────────────── #}
+  <form method="get" id="page-size-form" class="filter-form" style="margin-bottom:1.5em;">
+    <label for="page_size">Mostrar:</label>
+    <select name="page_size" id="page_size" onchange="this.form.submit()">
+      {% for size in page_size_options %}
+        <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="sort" value="{{ sort }}">
+    <input type="hidden" name="source" value="{{ selected_source }}">
+  </form>
+
+  {# ─── TABELA + BULK ACTIONS ───────────────────────── #}
+  <form method="post" action="{% url 'bulk_update_news' client.id %}" id="bulk-form">
+    {% csrf_token %}
+    <div class="action-bar" id="bulk-actions" style="display:none; margin-bottom:1em;">
+      <button type="button" id="btn-exclude-selected" class="button button-danger">
+        Excluir selecionados
+      </button>
+      <button type="button" id="btn-keep-selected" class="button">
+        Marcar como mantidos
+      </button>
+    </div>
+
+    <table class="styled-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="select-all"></th>
+          <th>Título</th>
+          <th>Data</th>
+          <th>Fonte</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for art in articles %}
+          <tr data-id="{{ art.id }}"
+              class="{% if art.excluded %}excluded{% elif art.topic %}kept{% endif %}">
+            <td><input type="checkbox" name="ids[]" value="{{ art.id }}" class="select-item"></td>
+            <td><a href="{{ art.url }}" target="_blank">{{ art.title }}</a></td>
+            <td>{{ art.published_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ art.source|domain }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="4" class="empty-message">Nenhum artigo encontrado.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
+
+  {# ─── PAGINAÇÃO ───────────────────────────────────── #}
+  <div class="pagination" style="margin-top:1em;">
+    {% if articles.has_previous %}
+      <a href="?page={{ articles.previous_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}"
+         class="pagination-link">‹ anterior</a>
+    {% endif %}
+    <span class="pagination-info">
+      página {{ articles.number }} de {{ articles.paginator.num_pages }}
+    </span>
+    {% if articles.has_next %}
+      <a href="?page={{ articles.next_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}"
+         class="pagination-link">próxima ›</a>
+    {% endif %}
+  </div>
+
+  <hr class="section-divider">
+
+  {# ─── CHARTS ──────────────────────────────────────── #}
+  <div class="charts-container">
+    <div class="chart-box">
+      <h2>Artigos por dia</h2>
+      {% if daily_labels_json and daily_counts_json %}
+        <div class="chart-wrapper"><canvas id="chart-daily"></canvas></div>
+      {% else %}
+        <p class="no-data">Sem dados para exibir.</p>
+      {% endif %}
+    </div>
+    <div class="chart-box">
+      <h2>Top 5 Fontes</h2>
+      {% if source_labels_json and source_counts_json %}
+        <div class="chart-wrapper"><canvas id="chart-sources"></canvas></div>
+      {% else %}
+        <p class="no-data">Sem dados para exibir.</p>
+      {% endif %}
+    </div>
+  
+  <!-- Inclua o Chart.js somente uma vez -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const daily_labels  = {{ daily_labels_json|safe }};
+      const daily_counts  = {{ daily_counts_json|safe }};
+      const source_labels = {{ source_labels_json|safe }};
+      const source_counts = {{ source_counts_json|safe }};
+
+      // Chart diário (linha)
+      if (daily_labels.length && daily_counts.length) {
+        new Chart(document.getElementById('chart-daily'), {
+          type: 'line',
+          data: {
+            labels: daily_labels,
+            datasets: [{
+              label: 'Artigos',
+              data: daily_counts,
+              borderColor: '#FF7F00',
+              backgroundColor: 'rgba(255,127,0,0.1)',
+              tension: 0.2
+            }]
+          },
+          options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true } }
+          }
+        });
+      }
+
+      // Chart fontes (barra horizontal)
+      if (source_labels.length && source_counts.length) {
+        new Chart(document.getElementById('chart-sources'), {
+          type: 'bar',
+          data: {
+            labels: source_labels,
+            datasets: [{
+              label: 'Publicações',
+              data: source_counts,
+              backgroundColor: '#FF9933'
+            }]
+          },
+          options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            scales: { x: { beginAtZero: true } },
+            plugins: {
+              legend: {
+                labels: { font: { family: "'Segoe UI', sans-serif" } }
+              }
+            }
+          }
+        });
+      }
+    });
+  </script>
+
+  <style>
+    /* fixa altura do wrapper pra evitar resize contínuo */
+    .chart-wrapper { position: relative; height: 250px; }
+    .spinner {
+      border:4px solid #eee;
+      border-top:4px solid #FF7F00;
+      border-radius:50%;
+      width:40px; height:40px;
+      animation:spin .8s linear infinite;
+      margin-bottom:.5em;
+    }
+    @keyframes spin { to{ transform:rotate(360deg); } }
+  </style>
+
+  <style>
+    /* overlay spinner */
+    #loading-overlay { display:none; flex-direction:column; text-align:center; }
+    .spinner {
+      border:4px solid #eee;
+      border-top:4px solid #FF7F00;
+      border-radius:50%;
+      width:40px; height:40px;
+      animation:spin 0.8s linear infinite;
+      margin-bottom:0.5em;
+    }
+    @keyframes spin { to{transform:rotate(360deg);} }
+
+    /* filter-form, styled-table, etc já estavam no seu CSS original */
+  </style>
+{% endblock content %}

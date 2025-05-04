@@ -1,0 +1,69 @@
+{# templates/newsclip/client_form.html #}
+
+{% extends "base.html" %}
+{% block title %}
+  {% if object %}Editar Cliente{% else %}Novo Cliente{% endif %}
+{% endblock %}
+
+{% block content %}
+  <h1>
+    {% if object %}Editar{% else %}Cadastrar{% endif %} Cliente
+  </h1>
+  <form method="post">
+    {% csrf_token %}
+
+    <p>
+      {{ form.name.label_tag }}<br>
+      {{ form.name }}
+      {{ form.name.errors }}
+    </p>
+
+    <p>
+      {{ form.keywords.label_tag }}<br>
+      {{ form.keywords }}
+      {{ form.keywords.help_text }}
+      {{ form.keywords.errors }}
+    </p>
+
+    <p>
+      {{ form.domains.label_tag }}<br>
+      {{ form.domains }}
+      {{ form.domains.help_text }}
+      {{ form.domains.errors }}
+    </p>
+
+    <p>
+      {{ form.instagram.label_tag }}<br>
+      {{ form.instagram }}
+      <small>{{ form.instagram.help_text }}</small>
+      {{ form.instagram.errors }}
+    </p>
+
+    <p>
+      {{ form.x.label_tag }}<br>
+      {{ form.x }}
+      <small>{{ form.x.help_text }}</small>
+      {{ form.x.errors }}
+    </p>
+
+    <p>
+      {{ form.youtube.label_tag }}<br>
+      {{ form.youtube }}
+      <small>{{ form.youtube.help_text }}</small>
+      {{ form.youtube.errors }}
+    </p>
+
+    <p>
+      {{ form.users.label_tag }}<br>
+      {{ form.users }}
+      {{ form.users.help_text }}
+      {{ form.users.errors }}
+    </p>
+
+    <button type="submit" class="button">
+      {% if object %}Salvar alterações{% else %}Cadastrar{% endif %}
+    </button>
+    <a href="{% url 'dashboard' %}" class="button">← Voltar</a>
+  </form>
+{% endblock %}
+

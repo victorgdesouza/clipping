@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if messages %}
+  <ul class="messages">
+    {% for msg in messages %}
+      <li class="{{ msg.tags }}">{{ msg }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}
+  <h1>Relatórios de {{ client.name }}</h1>
+
+  <p>
+    <a href="{% url 'dashboard' %}">&larr; Voltar ao painel</a>
+  </p>
+
+  <h2>Gerar novo relatório</h2>
+  <form method="post" action="{% url 'generate_report_view' client.id %}">
+    {% csrf_token %}
+    {{ form.days.label }} {{ form.days }}
+    {{ form.out_format.label }} {{ form.out_format }}
+    <button type="submit">Gerar</button>
+  </form>
+
+  <h2>Relatórios já gerados</h2>
+  {% if files %}
+    <ul>
+      {% for fn in files %}
+        <li>
+          <a href="{% url 'download_report' client.id fn %}">{{ fn }}</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Não há relatórios disponíveis.</p>
+  {% endif %}
+{% endblock %}
+
