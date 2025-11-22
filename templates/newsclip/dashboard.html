@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Meus Clientes{% endblock %}
+
+{% block content %}
+  <h1>Olá, {{ request.user.username }}!</h1>
+
+  <h2>Seus clientes</h2>
+  <p>
+    <a href="{% url 'client_add' %}">+ Novo Cliente</a>
+  </p>
+  
+<a href="{% url 'buscar_todas_noticias' %}" class="button" style="background: #1da1f2; color: #fff;">🔎 Buscar notícias de todos os clientes</a>
+
+  <ul>
+    {% for c in clients %}
+      <li>
+        <strong>{{ c.name }}</strong>
+
+        <a href="{% url 'client_edit' c.id %}" style="margin-left:1em;">✎ Editar</a>
+
+        <a href="{% url 'client_news' c.id %}" style="margin-left:1em;">
+          Ver notícias
+        </a>
+
+        
+        <a href="{% url 'client_reports' c.id %}" style="margin-left:1em;">
+          Relatórios
+        </a>
+      </li>
+    {% empty %}
+      <li>Você ainda não cadastrou nenhum cliente.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}
+
+

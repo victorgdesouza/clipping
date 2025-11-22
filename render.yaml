@@ -1,0 +1,16 @@
+services:
+  # ─────── Serviço Web ───────
+  -  type: web
+     name: web
+     env: python
+    # comando para instalar suas dependências (se você não faz isso em outro lugar)
+     buildCommand: pip install -r requirements.txt
+    # comando para rodar o Django em produção
+     startCommand: gunicorn --timeout 300 core.wsgi:application
+
+  # ─────── Worker django-q ───────
+  -  type: worker
+     name: q-worker
+     env: python
+    # não precisa de buildCommand novamente, já usou acima
+     startCommand: python manage.py qcluster

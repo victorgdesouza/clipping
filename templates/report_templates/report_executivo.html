@@ -1,0 +1,130 @@
+{# templates/report_templates/report_executivo.html #}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório Executivo - {{ client.name }}</title>
+    <style>
+        /* Estilos CSS (podemos refinar depois) */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .article-summary {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .sentiment-positive { color: green; }
+        .sentiment-negative { color: red; }
+        .sentiment-neutral { color: gray; }
+        .competitor-news {
+            border: 1px solid #eee;
+            padding: 5px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Relatório Executivo - {{ client.name }}</h1>
+
+    <div class="section">
+        <p><strong>Período:</strong> {{ interval }}</p>
+        <p><strong>Gerado em:</strong> {{ generated_at }}</p>
+    </div>
+
+    </body>
+</html>
+
+{# templates/report_templates/report_executivo.html #}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório Executivo - {{ client.name }}</title>
+    <style>
+        /* Estilos CSS (podemos refinar depois) */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .article-summary {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .sentiment-positive { color: green; }
+        .sentiment-negative { color: red; }
+        .sentiment-neutral { color: gray; }
+        .competitor-news {
+            border: 1px solid #eee;
+            padding: 5px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Relatório Executivo - {{ client.name }}</h1>
+
+    <div class="section">
+        <p><strong>Período:</strong> {{ interval }}</p>
+        <p><strong>Gerado em:</strong> {{ report_data.generated_at }}</p>
+        <p><strong>Panorama Geral:</strong> {{ report_data.panorama_geral }}</p>
+    </div>
+
+    <div class="section">
+        <h2>Resumo e Análise das Notícias</h2>
+        {% for item in report_data.articles_data %}
+            <div class="article-summary">
+                <h3>{{ item.title }}</h3>
+                <p><strong>Resumo:</strong> {{ item.resumo }}</p>
+                <p>
+                    <strong>Sentimento:</strong>
+                    <span class="sentiment-{{ report_data.classificacoes|slice:forloop.counter0|first|lower }}">
+                        {{ report_data.classificacoes|slice:forloop.counter0|first }}
+                    </span>
+                </p>
+                <p><strong>Dicas:</strong> {{ report_data.dicas_alertas|slice:forloop.counter0|first }}</p>
+            </div>
+        {% empty %}
+            <p>Nenhuma notícia encontrada para este período.</p>
+        {% endfor %}
+    </div>
+
+    <div class="section">
+        <h2>Notícias dos Concorrentes</h2>
+        {% for noticia in report_data.noticias_concorrentes|split:"\n" %}
+            <div class="competitor-news">
+                <p>{{ noticia }}</p>
+            </div>
+        {% empty %}
+            <p>Nenhuma notícia dos concorrentes encontrada.</p>
+        {% endfor %}
+    </div>
+
+    <div class="section">
+        <h2>Gráfico de Sentimento</h2>
+        <img src="data:image/png;base64,{{ report_data.image_base64 }}" alt="Gráfico de Sentimento">
+        <p>
+            <strong>Positivas:</strong> {{ report_data.positivas }} |
+            <strong>Negativas:</strong> {{ report_data.negativas }} |
+            <strong>Neutras:</strong> {{ report_data.neutras }}
+        </p>
+    </div>
+
+</body>
+</html>
