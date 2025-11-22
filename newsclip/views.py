@@ -26,12 +26,12 @@ from django.shortcuts import redirect, get_object_or_404, render
 from django.urls import reverse_lazy, reverse # reverse usado
 from django.utils import timezone # timezone usado
 from django.utils.text import slugify # slugify usado
-from django.views.generic import CreateView, UpdateView, ListView
+from django.views.generic import CreateView, UpdateView, ListView, DeleteView
 from django.views.decorators.http import require_POST # require_POST usado
 
 # Modelos e Formulários do App
 from .models import Client, Article # Removido Topic se não for um modelo aqui, Article duplicado removido
-from .forms import ReportForm # ClientForm foi removido desta linha
+from .forms import ReportForm, ClientForm # ClientForm adicionado
 
 # ----- IMPORTS PARA BUSCA FULL-TEXT -----
 # Usaremos SearchQuery. SearchRank e SearchVector (a função) são mais para PostgreSQL.
@@ -50,7 +50,7 @@ class SignUpView(CreateView):
 # 3) Cadastro de clientes
 class ClientCreateView(LoginRequiredMixin, CreateView):
     model = Client
-    fields = ["name", "keywords", "domains", "instagram", "x", "youtube"]
+    form_class = ClientForm
     template_name = "newsclip/client_form.html"
     
     def get_success_url(self): # Usar get_success_url para dashboards dinâmicos
@@ -66,7 +66,7 @@ class ClientCreateView(LoginRequiredMixin, CreateView):
 
 class ClientUpdateView(LoginRequiredMixin, UpdateView): # Adicionado LoginRequiredMixin
     model = Client
-    fields = ["name", "keywords", "domains", "instagram", "x", "youtube"]
+    form_class = ClientForm
     template_name = "newsclip/client_form.html"
 
     def get_success_url(self):
@@ -80,6 +80,19 @@ class ClientUpdateView(LoginRequiredMixin, UpdateView): # Adicionado LoginRequir
                 if callable(getattr(self.object.users, 'add', None)):
                     self.object.users.add(self.request.user)
         return response
+
+class ClientDeleteView(LoginRequiredMixin, DeleteView):
+    model = Client
+    template_name = "newsclip/client_confirm_delete.html"
+    success_url = reverse_lazy('dashboard')
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.user.is_superuser:
+            return qs
+        if hasattr(self.request.user, 'clients'):
+            return qs.filter(users=self.request.user)
+        return qs.none()
 
 # Esta view parece listar clientes e algumas de suas notícias, não é uma busca de "todas as notícias"
 # A chamada a `buscar_noticias_para_cliente` foi removida pois causava ImportError e sua lógica não está aqui
@@ -312,7 +325,7 @@ def fetch_news_view(request, client_id):
         # Run synchronously
         call_command('fetch_news', client_id=client_id)
         
-        message_text = "Busca de notícias concluída com sucesso!"
+        message_text = "Busca finalizada."
         status_ok = True
         
     except Exception as e:

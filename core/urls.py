@@ -13,6 +13,7 @@ from newsclip.views import (
     dashboard,
     ClientCreateView,
     ClientUpdateView,
+    ClientDeleteView,
     client_news,
     fetch_news_view,
     bulk_update_news,
@@ -48,6 +49,7 @@ urlpatterns = [
     # Clientes
     path('clients/add/', login_required(ClientCreateView.as_view()), name='client_add'),
     path('clients/<int:pk>/edit/', login_required(ClientUpdateView.as_view()), name='client_edit'),
+    path('clients/<int:pk>/delete/', login_required(ClientDeleteView.as_view()), name='client_delete'),
 
     # Notícias por cliente
     path('dashboard/<int:client_id>/news/',           login_required(client_news),        name='client_news'),

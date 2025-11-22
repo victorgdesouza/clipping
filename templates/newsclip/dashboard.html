@@ -2,35 +2,171 @@
 {% block title %}Meus Clientes{% endblock %}
 
 {% block content %}
-  <h1>Olá, {{ request.user.username }}!</h1>
+<style>
+  .dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
 
-  <h2>Seus clientes</h2>
-  <p>
-    <a href="{% url 'client_add' %}">+ Novo Cliente</a>
-  </p>
-  
-<a href="{% url 'buscar_todas_noticias' %}" class="button" style="background: #1da1f2; color: #fff;">🔎 Buscar notícias de todos os clientes</a>
+  .client-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+  }
 
-  <ul>
-    {% for c in clients %}
-      <li>
-        <strong>{{ c.name }}</strong>
+  .client-card {
+    background: var(--white);
+    border: 1px solid var(--gray-medium);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+  }
 
-        <a href="{% url 'client_edit' c.id %}" style="margin-left:1em;">✎ Editar</a>
+  .client-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--orange-tertiary);
+  }
 
-        <a href="{% url 'client_news' c.id %}" style="margin-left:1em;">
-          Ver notícias
+  .client-name {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--gray-dark);
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid var(--orange-tertiary);
+    padding-bottom: 0.5rem;
+  }
+
+  .btn-primary-action {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    /* Garante que o botão ocupe a largura total */
+    box-sizing: border-box;
+    /* Inclui padding na largura */
+    background-color: var(--blue);
+    color: white;
+    padding: 0.8rem;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+    text-decoration: none;
+    transition: background-color 0.2s;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-primary-action:hover {
+    background-color: #2980b9;
+    text-decoration: none;
+    color: white;
+  }
+
+  .card-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--gray-light);
+    font-size: 0.9rem;
+  }
+
+  .action-group {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .action-link {
+    color: var(--gray-dark);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: color 0.2s;
+  }
+
+  .action-link:hover {
+    color: var(--orange-primary);
+    text-decoration: none;
+  }
+
+  .delete-link {
+    color: var(--red);
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+
+  .delete-link:hover {
+    color: var(--red);
+    opacity: 1;
+    text-decoration: none;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: var(--gray-light);
+    border-radius: 8px;
+    border: 2px dashed var(--gray-medium);
+  }
+
+  .empty-state p {
+    font-size: 1.2rem;
+    color: var(--gray-dark);
+    margin-bottom: 1.5rem;
+  }
+</style>
+
+<div class="dashboard-header">
+  <div>
+    <h1>Olá, {{ request.user.username }}!</h1>
+    <p style="color: var(--gray-dark); margin: 0;">Bem-vindo ao seu painel de controle.</p>
+  </div>
+  <a href="{% url 'client_add' %}" class="button">+ Novo Cliente</a>
+</div>
+
+<h2 style="margin-bottom: 1.5rem; border-left: 5px solid var(--orange-primary); padding-left: 10px;">Seus Clientes</h2>
+
+{% if clients %}
+<div class="client-grid">
+  {% for c in clients %}
+  <div class="client-card">
+    <div class="client-name">{{ c.name }}</div>
+
+    <a href="{% url 'client_news' c.id %}" class="btn-primary-action">
+      📰 Ver Notícias
+    </a>
+
+    <div class="card-actions">
+      <div class="action-group">
+        <a href="{% url 'client_reports' c.id %}" class="action-link" title="Relatórios">
+          📊 Relatórios
         </a>
-
-        
-        <a href="{% url 'client_reports' c.id %}" style="margin-left:1em;">
-          Relatórios
+        <a href="{% url 'client_edit' c.id %}" class="action-link" title="Editar">
+          ✏️ Editar
         </a>
-      </li>
-    {% empty %}
-      <li>Você ainda não cadastrou nenhum cliente.</li>
-    {% endfor %}
-  </ul>
+      </div>
+
+      <a href="{% url 'client_delete' c.id %}" class="action-link delete-link" title="Excluir permanentemente">
+        🗑️ Excluir
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <p>Você ainda não monitora nenhum cliente.</p>
+  <a href="{% url 'client_add' %}" class="button">Cadastrar primeiro cliente</a>
+</div>
+{% endif %}
+
 {% endblock %}
-
-
