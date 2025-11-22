@@ -1,42 +1,49 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% if messages %}
-  <ul class="messages">
-    {% for msg in messages %}
-      <li class="{{ msg.tags }}">{{ msg }}</li>
-    {% endfor %}
-  </ul>
-{% endif %}
-  <h1>Relatórios de {{ client.name }}</h1>
+<div class="form-container">
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+      <h2 style="margin: 0; border-left: 5px solid var(--orange-primary); padding-left: 10px;">Relatórios</h2>
+      <a href="{% url 'dashboard' %}" class="button button-secondary" style="font-size: 0.9rem;">← Voltar</a>
+    </div>
 
-  <p>
-    <a href="{% url 'dashboard' %}">&larr; Voltar ao painel</a>
-  </p>
+    <h3 style="font-size: 1.1rem; color: var(--gray-dark); margin-bottom: 1rem;">Gerar novo relatório</h3>
 
-  <h2>Gerar novo relatório</h2>
-    
-  <form action="{% url 'generate_report_view' client.id %}"
-      method="post"
-      style="margin-bottom: 1em;">
-  {% csrf_token %}
-  {{ form.as_p }}              {# aqui entram days (incluindo “all”) e out_format #}
-  <button type="submit" class="button">Gerar relatório</button>
-</form>
+    <form action="{% url 'generate_report_view' client.id %}" method="post" style="margin-bottom: 2rem;">
+      {% csrf_token %}
 
+      <!-- Render form fields manually or loop if needed, but as_p is simple. 
+           Let's wrap it to ensure inputs get styled if they match the selectors in base.css -->
+      <div class="form-group">
+        {{ form.as_p }}
+      </div>
 
+      <div class="form-actions" style="justify-content: flex-start; margin-top: 1rem;">
+        <button type="submit" class="button">Gerar relatório</button>
+      </div>
+    </form>
 
-  <h2>Relatórios já gerados</h2>
-  {% if files %}
-    <ul>
+    <hr style="border: 0; border-top: 1px solid var(--gray-light); margin: 2rem 0;">
+
+    <h3 style="font-size: 1.1rem; color: var(--gray-dark); margin-bottom: 1rem;">Relatórios disponíveis</h3>
+
+    {% if files %}
+    <ul style="list-style: none; padding: 0;">
       {% for fn in files %}
-        <li>
-          <a href="{% url 'download_report' client.id fn %}">{{ fn }}</a>
-        </li>
+      <li
+        style="margin-bottom: 0.5rem; padding: 0.5rem; background: var(--gray-light); border-radius: 4px; display: flex; align-items: center;">
+        <span style="margin-right: 0.5rem;">📄</span>
+        <a href="{% url 'download_report' client.id fn %}" style="flex: 1;">{{ fn }}</a>
+        <a href="{% url 'download_report' client.id fn %}" title="Baixar" style="text-decoration: none;">⬇️</a>
+      </li>
       {% endfor %}
     </ul>
-  {% else %}
-    <p>Não há relatórios disponíveis.</p>
-  {% endif %}
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: #999; background: #f9f9f9; border-radius: 4px;">
+      Não há relatórios gerados ainda.
+    </div>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}
-

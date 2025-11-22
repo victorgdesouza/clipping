@@ -1,64 +1,79 @@
 {# templates/newsclip/client_form.html #}
+{# templates/newsclip/client_form.html #}
 
 {% extends "base.html" %}
 {% block title %}
-  {% if object %}Editar Cliente{% else %}Novo Cliente{% endif %}
+{% if object %}Editar Cliente{% else %}Novo Cliente{% endif %}
 {% endblock %}
 
 {% block content %}
-  <h1>
-    {% if object %}Editar{% else %}Cadastrar{% endif %} Cliente
-  </h1>
-  <form method="post">
-    {% csrf_token %}
+<div class="form-container">
+  <div class="card">
+    <h2 class="mb-3" style="border-left: 5px solid var(--orange-primary); padding-left: 10px;">
+      {% if form.instance.pk %}Editar Cliente{% else %}Cadastrar Cliente{% endif %}
+    </h2>
 
-    <p>
-      {{ form.name.label_tag }}<br>
-      {{ form.name }}
-      {{ form.name.errors }}
-    </p>
+    <form method="post">
+      {% csrf_token %}
 
-    <p>
-      {{ form.keywords.label_tag }}<br>
-      {{ form.keywords }}
-      {{ form.keywords.help_text }}
-      {{ form.keywords.errors }}
-    </p>
+      <div class="form-group">
+        {{ form.name.label_tag }}
+        {{ form.name }}
+        {% if form.name.errors %}
+        <div style="color: var(--red); font-size: 0.9rem;">{{ form.name.errors }}</div>
+        {% endif %}
+      </div>
 
-    <p>
-      {{ form.domains.label_tag }}<br>
-      {{ form.domains }}
-      {{ form.domains.help_text }}
-      {{ form.domains.errors }}
-    </p>
+      <div class="form-group">
+        {{ form.keywords.label_tag }}
+        {{ form.keywords }}
+        <div class="form-help-text">{{ form.keywords.help_text }}</div>
+        {% if form.keywords.errors %}
+        <div style="color: var(--red); font-size: 0.9rem;">{{ form.keywords.errors }}</div>
+        {% endif %}
+      </div>
 
-    <p>
-      {{ form.instagram.label_tag }}<br>
-      {{ form.instagram }}
-      <small>{{ form.instagram.help_text }}</small>
-      {{ form.instagram.errors }}
-    </p>
+      <div class="form-group">
+        {{ form.domains.label_tag }}
+        {{ form.domains }}
+        <div class="form-help-text">{{ form.domains.help_text }}</div>
+        {% if form.domains.errors %}
+        <div style="color: var(--red); font-size: 0.9rem;">{{ form.domains.errors }}</div>
+        {% endif %}
+      </div>
 
-    <p>
-      {{ form.x.label_tag }}<br>
-      {{ form.x }}
-      <small>{{ form.x.help_text }}</small>
-      {{ form.x.errors }}
-    </p>
+      <div class="form-group">
+        {{ form.instagram.label_tag }}
+        {{ form.instagram }}
+        <div class="form-help-text">{{ form.instagram.help_text }}</div>
+        {% if form.instagram.errors %}
+        <div style="color: var(--red); font-size: 0.9rem;">{{ form.instagram.errors }}</div>
+        {% endif %}
+      </div>
 
-    <p>
-      {{ form.youtube.label_tag }}<br>
-      {{ form.youtube }}
-      <small>{{ form.youtube.help_text }}</small>
-      {{ form.youtube.errors }}
-    </p>
+      <div class="form-group">
+        {{ form.x.label_tag }}
+        {{ form.x }}
+        <div class="form-help-text">{{ form.x.help_text }}</div>
+        {% if form.x.errors %}
+        <div style="color: var(--red); font-size: 0.9rem;">{{ form.x.errors }}</div>
+        {% endif %}
+      </div>
 
+      <div class="form-group">
+        {{ form.youtube.label_tag }}
+        {{ form.youtube }}
+        <div class="form-help-text">{{ form.youtube.help_text }}</div>
+        {% if form.youtube.errors %}
+        <div style="color: var(--red); font-size: 0.9rem;">{{ form.youtube.errors }}</div>
+        {% endif %}
+      </div>
 
-
-    <button type="submit" class="button">
-      {% if object %}Salvar alterações{% else %}Cadastrar{% endif %}
-    </button>
-    <a href="{% url 'dashboard' %}" class="button">← Voltar</a>
-  </form>
+      <div class="form-actions">
+        <a href="{% url 'dashboard' %}" class="button button-secondary">Cancelar</a>
+        <button type="submit" class="button">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
-

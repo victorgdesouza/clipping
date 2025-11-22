@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Excluir Cliente{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="card" style="text-align: center;">
+        <h2 style="color: var(--red); margin-bottom: 1.5rem;">Excluir Cliente</h2>
+
+        <p style="font-size: 1.1rem; margin-bottom: 2rem;">
+            Tem certeza que deseja excluir o cliente <strong>{{ object.name }}</strong>?
+        </p>
+
+        <div
+            style="background-color: #fff3cd; color: #856404; padding: 1.5rem; border: 1px solid #ffeeba; border-radius: 8px; margin-bottom: 2rem; text-align: left;">
+            <p style="margin: 0 0 0.5rem 0; font-weight: bold; display: flex; align-items: center; gap: 0.5rem;">
+                ⚠️ Atenção: Esta ação é irreversível.
+            </p>
+            <ul style="margin: 0; padding-left: 1.5rem;">
+                <li>Todas as notícias capturadas serão apagadas.</li>
+                <li>Todos os relatórios gerados serão perdidos.</li>
+                <li>As configurações de busca serão removidas.</li>
+            </ul>
+        </div>
+
+        <form method="post" class="form-actions"
+            style="justify-content: center; border-top: none; padding-top: 0; margin-top: 0;">
+            {% csrf_token %}
+            <a href="{% url 'dashboard' %}" class="button button-secondary">Cancelar</a>
+            <button type="submit" class="button" style="background-color: var(--red);">Sim, excluir tudo</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
