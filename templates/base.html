@@ -1,0 +1,356 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  
+  <link rel="stylesheet" href="{% static 'newsclip/css/base.css' %}">
+  <meta charset="UTF-8">
+  <title>{% block title %}Clipping App{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* Variáveis CSS para facilitar a manutenção */
+    :root {
+      /* Cores principais */
+      --orange-primary: #FF7F00;
+      --orange-secondary: #FF9933;
+      --orange-tertiary: #FFB366;
+      
+      /* Cores neutras */
+      --white: #FFFFFF;
+      --gray-light: #F5F5F5;
+      --gray-medium: #E0E0E0;
+      --gray-dark: #444444;
+      --gray-very-dark: #333333;
+      
+      /* Cores de destaque */
+      --blue: #3498DB;
+      --green: #2ECC71;
+      --red: #E74C3C;
+      
+      /* Espaçamentos */
+      --spacing-xs: 0.25rem;
+      --spacing-sm: 0.5rem;
+      --spacing-md: 1rem;
+      --spacing-lg: 1.5rem;
+      --spacing-xl: 2rem;
+      
+      /* Bordas */
+      --border-radius: 4px;
+      --border-width: 1px;
+      
+      /* Sombras */
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+      --shadow-md: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+    }
+
+    /* Reset e estilos base */
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: var(--gray-dark);
+      background-color: var(--white);
+    }
+
+    /* Cabeçalho e rodapé */
+    header, footer {
+      background: var(--orange-primary);
+      color: var(--white);
+      padding: var(--spacing-md);
+      box-shadow: var(--shadow-sm);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 1.8rem;
+    }
+
+    header a, footer a {
+      color: var(--white);
+      text-decoration: none;
+      transition: opacity 0.2s ease;
+    }
+
+    header a:hover, footer a:hover {
+      opacity: 0.8;
+      text-decoration: underline;
+    }
+
+    /* Layout principal */
+    .container {
+      display: flex;
+      min-height: calc(100vh - 140px); /* Altura total menos cabeçalho e rodapé */
+    }
+
+    nav {
+      width: 220px;
+      background: var(--gray-light);
+      padding: var(--spacing-md);
+      border-right: var(--border-width) solid var(--gray-medium);
+    }
+
+    main {
+      flex: 1;
+      padding: var(--spacing-lg);
+      background-color: var(--white);
+    }
+
+    /* Títulos */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--gray-dark);
+      margin-top: 0;
+      margin-bottom: var(--spacing-md);
+    }
+
+    /* em vez de h1 { … } use: */
+  header h1 {
+  color: var(--white);
+  border-bottom: 2px solid var(--orange-tertiary);
+  padding-bottom: var(--spacing-xs);
+  margin-bottom: var(--spacing-lg);
+}
+
+h1.page-title {
+  color: var(--gray-very-dark);
+  background-color: var(--gray-light);
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius);
+  border-bottom: 2px solid var(--orange-primary);
+  display: inline-block; /* pra ficar só no texto */
+}
+
+    /* Links */
+    a {
+      color: var(--blue);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    a:hover {
+      color: var(--orange-secondary);
+      text-decoration: underline;
+    }
+
+    /* Botões */
+    .button, button, input[type="submit"] {
+      display: inline-block;
+      margin: var(--spacing-xs) var(--spacing-sm) var(--spacing-xs) 0;
+      padding: var(--spacing-sm) var(--spacing-md);
+      background: var(--orange-primary);
+      color: var(--white);
+      border: none;
+      border-radius: var(--border-radius);
+      text-decoration: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .button:hover, button:hover, input[type="submit"]:hover {
+      background: var(--orange-secondary);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .button:active, button:active, input[type="submit"]:active {
+      transform: translateY(0);
+    }
+
+    .button-secondary {
+      background: var(--gray-dark);
+    }
+
+    .button-secondary:hover {
+      background: var(--gray-very-dark);
+    }
+
+    /* Formulários */
+    form {
+      margin-bottom: var(--spacing-lg);
+    }
+
+    label {
+      display: block;
+      margin-bottom: var(--spacing-xs);
+      font-weight: 500;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: var(--spacing-sm);
+      margin-bottom: var(--spacing-md);
+      border: var(--border-width) solid var(--gray-medium);
+      border-radius: var(--border-radius);
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--orange-secondary);
+      box-shadow: 0 0 0 2px var(--orange-tertiary);
+    }
+
+    /* Tabelas */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: var(--spacing-md) 0;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      border-radius: var(--border-radius);
+    }
+
+    th {
+      background: var(--orange-tertiary);
+      color: var(--gray-dark);
+      font-weight: 600;
+      text-align: left;
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-bottom: 2px solid var(--orange-secondary);
+    }
+
+    td {
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-bottom: var(--border-width) solid var(--gray-medium);
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--gray-light);
+    }
+
+    tr:hover {
+      background-color: var(--orange-tertiary);
+    }
+
+    /* Listas */
+    ul {
+      padding-left: var(--spacing-lg);
+    }
+
+    ul li {
+      margin-bottom: var(--spacing-sm);
+    }
+
+    /* Paginação */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: var(--spacing-lg) 0;
+    }
+
+    .pagination a {
+      padding: var(--spacing-xs) var(--spacing-sm);
+      margin: 0 var(--spacing-xs);
+      border: var(--border-width) solid var(--gray-medium);
+      border-radius: var(--border-radius);
+      color: var(--orange-primary);
+      text-decoration: none;
+    }
+
+    .pagination a:hover {
+      background-color: var(--orange-tertiary);
+      color: var(--gray-dark);
+    }
+
+    /* Gráficos */
+    canvas {
+      max-width: 100%;
+      margin: var(--spacing-md) 0;
+      border: var(--border-width) solid var(--gray-medium);
+      border-radius: var(--border-radius);
+      background-color: var(--white);
+      padding: var(--spacing-sm);
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Utilitários */
+    .text-center {
+      text-align: center;
+    }
+
+    .mt-1 { margin-top: var(--spacing-sm); }
+    .mt-2 { margin-top: var(--spacing-md); }
+    .mt-3 { margin-top: var(--spacing-lg); }
+    .mb-1 { margin-bottom: var(--spacing-sm); }
+    .mb-2 { margin-bottom: var(--spacing-md); }
+    .mb-3 { margin-bottom: var(--spacing-lg); }
+
+    /* Responsividade */
+    @media (max-width: 768px) {
+      .container {
+        flex-direction: column;
+      }
+      
+      nav {
+        width: 100%;
+        border-right: none;
+        border-bottom: var(--border-width) solid var(--gray-medium);
+      }
+      
+      table {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+
+    /* Animações */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .fade-in {
+      animation: fadeIn 0.5s ease-in;
+    }
+
+    /* Estilos específicos para gráficos Chart.js */
+    #chart-daily, #chart-sources {
+      background-color: var(--white);
+      border: var(--border-width) solid var(--gray-medium);
+      border-radius: var(--border-radius);
+      padding: var(--spacing-md);
+      margin-bottom: var(--spacing-xl);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 style="display:inline">Clipping App</h1>
+    <span style="float:right">
+      {% if user.is_authenticated %}
+        Olá, {{ user.username }} |
+        <a href="{% url 'dashboard' %}">Dashboard</a> |
+        <form action="{% url 'logout' %}" method="post" style="display:inline">
+          {% csrf_token %}
+          <button 
+            type="submit" 
+            style="background:none;border:none;color:#fff;cursor:pointer;padding:0;font:inherit;">
+            Sair
+          </button>
+        </form>
+      {% else %}
+        <a href="{% url 'login' %}">Login</a> |
+        <a href="{% url 'signup' %}">Cadastrar</a>
+      {% endif %}
+    </span>
+  </header>
+
+  <div class="container">
+    {% block sidebar %}{% endblock %}
+    <main class="fade-in">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <footer>
+    &copy; {% now "Y" %} Clipping App
+  </footer>
+</body>
+</html>
+
+
+

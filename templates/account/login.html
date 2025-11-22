@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+  <div class="auth-container">
+    <div class="auth-card">
+      <h1>Login</h1>
+
+      <form method="post" action="{% url 'login' %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="button button-full">Entrar</button>
+      </form>
+
+      {# logo abaixo do seu <form> de login #}
+        <div style="text-align:center; margin:1rem 0;">
+          <a href="/accounts/google/login/"
+             class="button button-full button-google">
+            <img src="{% static 'img/google-logo.svg' %}"
+                 alt="Google"
+                 style="width:20px; margin-right:.5rem; vertical-align:middle;">
+            Entrar com Google
+          </a>
+        </div>
+        
+      <div class="auth-links">
+        <p>Não tem conta? <a href="{% url 'account_signup' %}">Cadastre-se aqui</a></p>
+        <p><a href="{% url 'account_reset_password' %}">Esqueci minha senha</a></p>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .button-google {
+      background: #fff;
+      border: 1px solid var(--gray-medium);
+      color: var(--gray-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .button-google:hover {
+      background: var(--gray-light);
+    }
+  </style>
+{% endblock %}
