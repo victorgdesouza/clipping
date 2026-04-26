@@ -1,11 +1,33 @@
-# ignorar virtualenv
+# Ambiente local
+.venv/
 venv/
-# ignorar modelos locais
+env/
+
+# Segredos e configuracoes locais
+.env
+core/.env
+*.env
+
+# Banco e arquivos locais
+db.sqlite3
+debug.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Artefatos gerados
+staticfiles/
+media/reports/
+
+# Modelos locais
 models/
 *.gguf
 
-# ignorar banco local
-db.sqlite3
-
-# ignorar configs de IDE
-*.log
+# IDE/SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
