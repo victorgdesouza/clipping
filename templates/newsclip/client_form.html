@@ -1,79 +1,68 @@
-{# templates/newsclip/client_form.html #}
-{# templates/newsclip/client_form.html #}
-
 {% extends "base.html" %}
-{% block title %}
-{% if object %}Editar Cliente{% else %}Novo Cliente{% endif %}
-{% endblock %}
+{% block title %}{% if object %}Editar Cliente{% else %}Novo Cliente{% endif %}{% endblock %}
 
 {% block content %}
-<div class="form-container">
-  <div class="card">
-    <h2 class="mb-3" style="border-left: 5px solid var(--orange-primary); padding-left: 10px;">
-      {% if form.instance.pk %}Editar Cliente{% else %}Cadastrar Cliente{% endif %}
-    </h2>
-
-    <form method="post">
-      {% csrf_token %}
-
-      <div class="form-group">
-        {{ form.name.label_tag }}
-        {{ form.name }}
-        {% if form.name.errors %}
-        <div style="color: var(--red); font-size: 0.9rem;">{{ form.name.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="form-group">
-        {{ form.keywords.label_tag }}
-        {{ form.keywords }}
-        <div class="form-help-text">{{ form.keywords.help_text }}</div>
-        {% if form.keywords.errors %}
-        <div style="color: var(--red); font-size: 0.9rem;">{{ form.keywords.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="form-group">
-        {{ form.domains.label_tag }}
-        {{ form.domains }}
-        <div class="form-help-text">{{ form.domains.help_text }}</div>
-        {% if form.domains.errors %}
-        <div style="color: var(--red); font-size: 0.9rem;">{{ form.domains.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="form-group">
-        {{ form.instagram.label_tag }}
-        {{ form.instagram }}
-        <div class="form-help-text">{{ form.instagram.help_text }}</div>
-        {% if form.instagram.errors %}
-        <div style="color: var(--red); font-size: 0.9rem;">{{ form.instagram.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="form-group">
-        {{ form.x.label_tag }}
-        {{ form.x }}
-        <div class="form-help-text">{{ form.x.help_text }}</div>
-        {% if form.x.errors %}
-        <div style="color: var(--red); font-size: 0.9rem;">{{ form.x.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="form-group">
-        {{ form.youtube.label_tag }}
-        {{ form.youtube }}
-        <div class="form-help-text">{{ form.youtube.help_text }}</div>
-        {% if form.youtube.errors %}
-        <div style="color: var(--red); font-size: 0.9rem;">{{ form.youtube.errors }}</div>
-        {% endif %}
-      </div>
-
-      <div class="form-actions">
-        <a href="{% url 'dashboard' %}" class="button button-secondary">Cancelar</a>
-        <button type="submit" class="button">Salvar</button>
-      </div>
-    </form>
+<section class="page-header">
+  <div>
+    <p class="page-eyebrow">Cliente</p>
+    <h1>{% if form.instance.pk %}Editar cliente{% else %}Cadastrar cliente{% endif %}</h1>
+    <p>Defina termos de busca, fontes confiaveis e perfis sociais para o monitoramento.</p>
   </div>
-</div>
+  <a href="{% url 'dashboard' %}" class="button button-ghost">Voltar</a>
+</section>
+
+<form method="post" class="card stacked-form">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div class="message message-error">{{ form.non_field_errors }}</div>
+  {% endif %}
+
+  <div class="form-grid">
+    <div class="form-group form-group-wide">
+      <label for="{{ form.name.id_for_label }}">Nome do cliente</label>
+      {{ form.name }}
+      {{ form.name.errors }}
+    </div>
+
+    <div class="form-group form-group-wide">
+      <label for="{{ form.keywords.id_for_label }}">Palavras-chave</label>
+      {{ form.keywords }}
+      <span class="form-help-text">{{ form.keywords.help_text }}</span>
+      {{ form.keywords.errors }}
+    </div>
+
+    <div class="form-group form-group-wide">
+      <label for="{{ form.domains.id_for_label }}">Dominios confiaveis</label>
+      {{ form.domains }}
+      <span class="form-help-text">{{ form.domains.help_text }}</span>
+      {{ form.domains.errors }}
+    </div>
+
+    <div class="form-group">
+      <label for="{{ form.instagram.id_for_label }}">Instagram</label>
+      {{ form.instagram }}
+      <span class="form-help-text">{{ form.instagram.help_text }}</span>
+      {{ form.instagram.errors }}
+    </div>
+
+    <div class="form-group">
+      <label for="{{ form.x.id_for_label }}">X/Twitter</label>
+      {{ form.x }}
+      <span class="form-help-text">{{ form.x.help_text }}</span>
+      {{ form.x.errors }}
+    </div>
+
+    <div class="form-group">
+      <label for="{{ form.youtube.id_for_label }}">YouTube</label>
+      {{ form.youtube }}
+      <span class="form-help-text">{{ form.youtube.help_text }}</span>
+      {{ form.youtube.errors }}
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <a href="{% url 'dashboard' %}" class="button button-ghost">Cancelar</a>
+    <button type="submit" class="button">Salvar cliente</button>
+  </div>
+</form>
 {% endblock %}
