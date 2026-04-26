@@ -1,48 +1,40 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Login{% endblock %}
+{% block title %}Entrar{% endblock %}
 
 {% block content %}
-  <div class="auth-container">
-    <div class="auth-card">
-      <h1>Login</h1>
+<section class="auth-shell">
+  <div class="auth-panel">
+    <p class="page-eyebrow">Acesso</p>
+    <h1>Entre no Clipping App</h1>
+    <p class="auth-subtitle">Use seu login ou entre com Google, se estiver configurado.</p>
 
-      <form method="post" action="{% url 'login' %}">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit" class="button button-full">Entrar</button>
-      </form>
-
-      {# logo abaixo do seu <form> de login #}
-        <div style="text-align:center; margin:1rem 0;">
-          <a href="/accounts/google/login/"
-             class="button button-full button-google">
-            <img src="{% static 'img/google-logo.svg' %}"
-                 alt="Google"
-                 style="width:20px; margin-right:.5rem; vertical-align:middle;">
-            Entrar com Google
-          </a>
+    <form method="post" action="{% url 'login' %}" class="stacked-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div class="message message-error">{{ form.non_field_errors }}</div>
+      {% endif %}
+      {% for field in form %}
+        <div class="form-group">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {{ field.errors }}
         </div>
-        
-      <div class="auth-links">
-        <p>Não tem conta? <a href="{% url 'account_signup' %}">Cadastre-se aqui</a></p>
-        <p><a href="{% url 'account_reset_password' %}">Esqueci minha senha</a></p>
-      </div>
+      {% endfor %}
+      <button type="submit" class="button button-full">Entrar</button>
+    </form>
+
+    <a href="/accounts/google/login/" class="button button-full button-google">
+      <img src="{% static 'img/google-logo.svg' %}" alt="" class="button-google__icon">
+      Entrar com Google
+    </a>
+
+    <div class="auth-links">
+      <a href="{% url 'account_signup' %}">Criar conta</a>
+      <span aria-hidden="true">•</span>
+      <a href="{% url 'account_reset_password' %}">Esqueci minha senha</a>
     </div>
   </div>
-
-  <style>
-    .button-google {
-      background: #fff;
-      border: 1px solid var(--gray-medium);
-      color: var(--gray-dark);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .button-google:hover {
-      background: var(--gray-light);
-    }
-  </style>
+</section>
 {% endblock %}
