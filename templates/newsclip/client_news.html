@@ -1,26 +1,25 @@
 {% extends "base.html" %}
 {% load source_extras %}
 
-{% block title %}Notícias de {{ client.name }}{% endblock title %}
+{% block title %}Noticias de {{ client.name }}{% endblock title %}
 
 {% block content %}
-<h1 class="page-title">
-  Notícias de
-  <span class="client-name">{{ client.name }}</span>
-</h1>
+<section class="page-header">
+  <div>
+    <p class="page-eyebrow">Noticias</p>
+    <h1 class="page-title">{{ client.name }}</h1>
+    <p>Revise mencoes coletadas, filtre por fonte e gere relatorios.</p>
+  </div>
+  <div class="action-bar">
+    <a class="button button-ghost" href="{% url 'dashboard' %}">Dashboard</a>
+    <a class="button button-ghost" href="{% url 'client_reports' client.id %}">Relatorios</a>
+    <button id="btn-fetch-news" class="button">Buscar noticias</button>
+  </div>
+</section>
 
-<div class="action-bar">
-  <a class="button" href="{% url 'dashboard' %}">← Dashboard</a>
-  <a class="button" href="{% url 'client_reports' client.id %}">Relatórios</a>
-  <button id="btn-fetch-news" class="button button-secondary">Buscar notícias</button>
-</div>
-
-<!-- overlay full-screen -->
-<div id="loading-overlay" style="display:none;position:fixed;top:0;left:0;
-width:100%;height:100%;background:rgba(255,255,255,0.8);
-justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
+<div id="loading-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.8);justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
   <div class="spinner"></div>
-  <p>Buscando notícias…</p>
+  <p>Buscando noticias...</p>
 </div>
 
 <script>
@@ -34,8 +33,8 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
     });
     return v;
   }
+
   document.addEventListener('DOMContentLoaded', function () {
-    // Buscar notícias
     const btnFetch = document.getElementById('btn-fetch-news');
     const overlay = document.getElementById('loading-overlay');
     if (btnFetch) {
@@ -65,34 +64,35 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
             console.error('Fetch error:', err);
             overlay.style.display = 'none';
             btnFetch.disabled = false;
-            alert('Falha ao buscar notícias. Verifique o console.');
+            alert('Falha ao buscar noticias. Verifique o console.');
           });
       });
     }
 
-    // Bulk actions
     const bulkActions = document.getElementById('bulk-actions');
     const checkboxes = document.querySelectorAll('.select-item');
     const selectAll = document.getElementById('select-all');
     const form = document.getElementById('bulk-form');
+
     function updateBulkActions() {
       const anyChecked = Array.from(checkboxes).some(chk => chk.checked);
       bulkActions.style.display = anyChecked ? 'block' : 'none';
     }
+
     checkboxes.forEach(chk => {
       chk.addEventListener('change', updateBulkActions);
     });
+
     if (selectAll) {
       selectAll.addEventListener('change', function () {
         checkboxes.forEach(chk => chk.checked = selectAll.checked);
         updateBulkActions();
       });
     }
+
     updateBulkActions();
 
-    // Excluir selecionados
     document.getElementById('btn-exclude-selected').onclick = function () {
-      // Remove input antigo
       const prevInput = form.querySelector('input[name="action"]');
       if (prevInput) prevInput.remove();
 
@@ -103,13 +103,12 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
       form.appendChild(action);
 
       if (!Array.from(checkboxes).some(chk => chk.checked)) {
-        alert('Selecione pelo menos uma notícia!');
+        alert('Selecione pelo menos uma noticia!');
         return;
       }
       form.submit();
     };
 
-    // Marcar como mantidos
     document.getElementById('btn-keep-selected').onclick = function () {
       const prevInput = form.querySelector('input[name="action"]');
       if (prevInput) prevInput.remove();
@@ -121,7 +120,7 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
       form.appendChild(action);
 
       if (!Array.from(checkboxes).some(chk => chk.checked)) {
-        alert('Selecione pelo menos uma notícia!');
+        alert('Selecione pelo menos uma noticia!');
         return;
       }
       form.submit();
@@ -130,6 +129,10 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
 </script>
 
 <form method="get" class="filter-form">
+  <div class="filter-group">
+    <label for="q">Buscar:</label>
+    <input id="q" type="search" name="q" value="{{ current_search_query }}" placeholder="Titulo, fonte ou conteudo">
+  </div>
   <div class="filter-group">
     <label for="sort">Ordenar por:</label>
     <select id="sort" name="sort">
@@ -159,6 +162,7 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
   </select>
   <input type="hidden" name="sort" value="{{ sort }}">
   <input type="hidden" name="source" value="{{ selected_source }}">
+  <input type="hidden" name="q" value="{{ current_search_query }}">
 </form>
 
 <form method="post" action="{% url 'bulk_update_news' client.id %}" id="bulk-form">
@@ -175,7 +179,7 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
     <thead>
       <tr>
         <th><input type="checkbox" id="select-all"></th>
-        <th>Título</th>
+        <th>Titulo</th>
         <th>Data</th>
         <th>Fonte</th>
       </tr>
@@ -199,21 +203,21 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
 
 <div class="pagination" style="margin-top:1em;">
   {% if articles.has_previous %}
-  <a href="?page=1&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}"
-    class="pagination-link">Primeira «</a>
-  <a href="?page={{ articles.previous_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}"
-    class="pagination-link">‹ anterior</a>
+  <a href="?page=1&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+    class="pagination-link">Primeira</a>
+  <a href="?page={{ articles.previous_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+    class="pagination-link">Anterior</a>
   {% endif %}
 
   <span class="pagination-info">
-    página {{ articles.number }} de {{ articles.paginator.num_pages }}
+    pagina {{ articles.number }} de {{ articles.paginator.num_pages }}
   </span>
 
   {% if articles.has_next %}
-  <a href="?page={{ articles.next_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}"
-    class="pagination-link">próxima ›</a>
-  <a href="?page={{ articles.paginator.num_pages }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}"
-    class="pagination-link">Última »</a>
+  <a href="?page={{ articles.next_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+    class="pagination-link">Proxima</a>
+  <a href="?page={{ articles.paginator.num_pages }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+    class="pagination-link">Ultima</a>
   {% endif %}
 </div>
 
@@ -245,7 +249,6 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    // Artigos por dia
     {% if daily_labels_json and daily_counts_json %}
     var ctxDaily = document.getElementById('chart-daily');
     if (ctxDaily && window.Chart) {
@@ -253,48 +256,47 @@ justify-content:center;align-items:center;z-index:1000;flex-direction:column;">
         type: 'line',
         data: {
           labels: {{ daily_labels_json|safe }},
-    datasets: [{
-      label: 'Artigos',
-      data: {{ daily_counts_json|safe }},
-    tension: 0.2,
-    borderWidth: 2
+          datasets: [{
+            label: 'Artigos',
+            data: {{ daily_counts_json|safe }},
+            tension: 0.2,
+            borderWidth: 2
           }]
         },
-    options: {
-    responsive: false,
-    maintainAspectRatio: false,
-    animation: false,
-    scales: { y: { beginAtZero: true } }
-  }
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: { y: { beginAtZero: true } }
+        }
       });
     }
-  {% endif %}
+    {% endif %}
 
-  // Top 5 Fontes
-  {% if source_labels_json and source_counts_json %}
-  var ctxSources = document.getElementById('chart-sources');
-  if (ctxSources && window.Chart) {
-    new Chart(ctxSources, {
-      type: 'bar',
-      data: {
-        labels: {{ source_labels_json|safe }},
-  datasets: [{
-    label: 'Publicações',
-    data: {{ source_counts_json|safe }},
-    borderWidth: 2
+    {% if source_labels_json and source_counts_json %}
+    var ctxSources = document.getElementById('chart-sources');
+    if (ctxSources && window.Chart) {
+      new Chart(ctxSources, {
+        type: 'bar',
+        data: {
+          labels: {{ source_labels_json|safe }},
+          datasets: [{
+            label: 'Publicacoes',
+            data: {{ source_counts_json|safe }},
+            borderWidth: 2
           }]
         },
-  options: {
-    responsive: false,
-      maintainAspectRatio: false,
-        animation: false,
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          animation: false,
           indexAxis: 'y',
-            scales: { x: { beginAtZero: true } }
-  }
+          scales: { x: { beginAtZero: true } }
+        }
       });
     }
-  {% endif %}
-});
+    {% endif %}
+  });
 </script>
 
 {% endblock content %}
