@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Clipping App | Monitoramento de noticias{% endblock %}
+
+{% block content %}
+<section class="landing-hero" aria-labelledby="landing-title">
+  <div class="landing-hero__media" aria-hidden="true">
+    <div class="product-shot">
+      <div class="product-shot__bar"><span></span><span></span><span></span></div>
+      <div class="product-shot__body">
+        <aside class="product-shot__side">
+          <strong>Clientes</strong>
+          <span class="active"></span><span></span><span></span>
+        </aside>
+        <div class="product-shot__content">
+          <div class="metric-row"><span>Noticias coletadas</span><strong>248</strong></div>
+          <div class="mini-chart"><i style="height: 44%"></i><i style="height: 68%"></i><i style="height: 36%"></i><i style="height: 82%"></i><i style="height: 58%"></i><i style="height: 74%"></i></div>
+          <div class="news-preview"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="landing-hero__copy">
+    <p class="landing-kicker">Clipping profissional para equipes enxutas</p>
+    <h1 id="landing-title">Acompanhe noticias, organize clientes e gere relatorios sem depender de planilhas soltas.</h1>
+    <p>O Clipping App centraliza buscas, fontes, filtros e relatorios para transformar monitoramento de midia em uma rotina clara, repetivel e facil de apresentar.</p>
+    <div class="landing-actions">
+      {% if user.is_authenticated %}
+        <a href="{% url 'dashboard' %}" class="button button-large">Entrar na aplicacao</a>
+      {% else %}
+        <a href="{% url 'login' %}?next={% url 'dashboard' %}" class="button button-large">Entrar na aplicacao</a>
+        <a href="{% url 'signup' %}" class="button button-ghost button-large">Criar conta</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="landing-section" aria-labelledby="what-title">
+  <div class="section-heading">
+    <p class="page-eyebrow">O que e</p>
+    <h2 id="what-title">Uma central de clipping para monitorar mencoes, fontes e publicacoes relevantes.</h2>
+  </div>
+  <div class="benefit-grid">
+    <article class="benefit-card"><span class="benefit-icon">01</span><h3>Busca por cliente</h3><p>Cadastre palavras-chave, dominios confiaveis e perfis sociais para acompanhar cada cliente em separado.</p></article>
+    <article class="benefit-card"><span class="benefit-icon">02</span><h3>Triagem rapida</h3><p>Filtre por fonte, data e termo pesquisado, mantendo somente o que tem valor para o atendimento ou relatorio.</p></article>
+    <article class="benefit-card"><span class="benefit-icon">03</span><h3>Relatorios prontos</h3><p>Gere entregaveis em PDF, Excel ou CSV para compartilhar resultados e manter historico de cobertura.</p></article>
+  </div>
+</section>
+
+<section class="landing-section landing-band" aria-labelledby="how-title">
+  <div class="section-heading">
+    <p class="page-eyebrow">Como fazer</p>
+    <h2 id="how-title">Da configuracao ao relatorio em quatro passos.</h2>
+  </div>
+  <div class="steps-list">
+    <div class="step-item"><strong>1</strong><div><h3>Crie ou selecione um cliente</h3><p>Organize cada marca, pessoa ou empresa com seus proprios termos de monitoramento.</p></div></div>
+    <div class="step-item"><strong>2</strong><div><h3>Informe palavras-chave e fontes</h3><p>Use nomes, temas, variacoes e dominios relevantes para reduzir ruido na coleta.</p></div></div>
+    <div class="step-item"><strong>3</strong><div><h3>Busque e revise noticias</h3><p>Veja as publicacoes encontradas, aplique filtros e exclua itens que nao entram no acompanhamento.</p></div></div>
+    <div class="step-item"><strong>4</strong><div><h3>Gere o relatorio</h3><p>Escolha periodo e formato para exportar o resultado da coleta com mais velocidade.</p></div></div>
+  </div>
+</section>
+
+<section class="landing-section" aria-labelledby="results-title">
+  <div class="section-heading">
+    <p class="page-eyebrow">Resultados esperados</p>
+    <h2 id="results-title">Mais controle sobre reputacao, entregas e rotina de monitoramento.</h2>
+  </div>
+  <div class="outcome-grid">
+    <div class="outcome-item"><strong>Menos retrabalho</strong><p>Centralize buscas e revisoes no mesmo fluxo, evitando arquivos duplicados e controles paralelos.</p></div>
+    <div class="outcome-item"><strong>Mais velocidade</strong><p>Reduza o tempo entre encontrar uma noticia relevante e transformar isso em evidencia para o cliente.</p></div>
+    <div class="outcome-item"><strong>Visao historica</strong><p>Acompanhe volume, fontes e periodo das publicacoes para identificar picos e oportunidades.</p></div>
+    <div class="outcome-item"><strong>Entrega profissional</strong><p>Apresente relatorios claros para equipes, liderancas ou clientes finais.</p></div>
+  </div>
+</section>
+
+<section class="landing-cta">
+  <h2>Comece pelo dashboard e cadastre seu primeiro cliente.</h2>
+  <p>Em poucos minutos voce ja consegue configurar termos, buscar noticias e preparar uma primeira entrega.</p>
+  <a href="{% if user.is_authenticated %}{% url 'dashboard' %}{% else %}{% url 'login' %}?next={% url 'dashboard' %}{% endif %}" class="button button-large">Acessar aplicacao</a>
+</section>
+{% endblock %}
