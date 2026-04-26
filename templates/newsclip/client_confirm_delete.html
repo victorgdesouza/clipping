@@ -1,34 +1,27 @@
 {% extends "base.html" %}
-
 {% block title %}Excluir Cliente{% endblock %}
 
 {% block content %}
-<div class="form-container">
-    <div class="card" style="text-align: center;">
-        <h2 style="color: var(--red); margin-bottom: 1.5rem;">Excluir Cliente</h2>
+<section class="auth-shell">
+  <div class="auth-panel auth-panel-wide">
+    <p class="page-eyebrow">Acao irreversivel</p>
+    <h1>Excluir cliente</h1>
+    <p class="auth-subtitle">Voce esta prestes a excluir <strong>{{ object.name }}</strong>.</p>
 
-        <p style="font-size: 1.1rem; margin-bottom: 2rem;">
-            Tem certeza que deseja excluir o cliente <strong>{{ object.name }}</strong>?
-        </p>
-
-        <div
-            style="background-color: #fff3cd; color: #856404; padding: 1.5rem; border: 1px solid #ffeeba; border-radius: 8px; margin-bottom: 2rem; text-align: left;">
-            <p style="margin: 0 0 0.5rem 0; font-weight: bold; display: flex; align-items: center; gap: 0.5rem;">
-                ⚠️ Atenção: Esta ação é irreversível.
-            </p>
-            <ul style="margin: 0; padding-left: 1.5rem;">
-                <li>Todas as notícias capturadas serão apagadas.</li>
-                <li>Todos os relatórios gerados serão perdidos.</li>
-                <li>As configurações de busca serão removidas.</li>
-            </ul>
-        </div>
-
-        <form method="post" class="form-actions"
-            style="justify-content: center; border-top: none; padding-top: 0; margin-top: 0;">
-            {% csrf_token %}
-            <a href="{% url 'dashboard' %}" class="button button-secondary">Cancelar</a>
-            <button type="submit" class="button" style="background-color: var(--red);">Sim, excluir tudo</button>
-        </form>
+    <div class="warning-panel">
+      <strong>Antes de continuar</strong>
+      <ul>
+        <li>Todas as noticias capturadas deste cliente serao apagadas.</li>
+        <li>As configuracoes de busca serao removidas.</li>
+        <li>Esta acao nao pode ser desfeita.</li>
+      </ul>
     </div>
-</div>
+
+    <form method="post" class="form-actions form-actions-center">
+      {% csrf_token %}
+      <a href="{% url 'dashboard' %}" class="button button-ghost">Cancelar</a>
+      <button type="submit" class="button button-danger">Excluir definitivamente</button>
+    </form>
+  </div>
+</section>
 {% endblock %}
