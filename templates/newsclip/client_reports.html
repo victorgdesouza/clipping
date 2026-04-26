@@ -1,49 +1,55 @@
 {% extends "base.html" %}
+{% block title %}Relatorios de {{ client.name }}{% endblock %}
 
 {% block content %}
-<div class="form-container">
-  <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-      <h2 style="margin: 0; border-left: 5px solid var(--orange-primary); padding-left: 10px;">Relatórios</h2>
-      <a href="{% url 'dashboard' %}" class="button button-secondary" style="font-size: 0.9rem;">← Voltar</a>
-    </div>
+<section class="page-header">
+  <div>
+    <p class="page-eyebrow">Relatorios</p>
+    <h1>{{ client.name }}</h1>
+    <p>Gere arquivos de acompanhamento e baixe relatorios ja criados.</p>
+  </div>
+  <a href="{% url 'dashboard' %}" class="button button-ghost">Dashboard</a>
+</section>
 
-    <h3 style="font-size: 1.1rem; color: var(--gray-dark); margin-bottom: 1rem;">Gerar novo relatório</h3>
+<div class="two-column-layout">
+  <section class="card">
+    <h2>Gerar novo relatorio</h2>
+    <p class="section-copy">Escolha o periodo e o formato desejado para exportar as noticias do cliente.</p>
 
-    <form action="{% url 'generate_report_view' client.id %}" method="post" style="margin-bottom: 2rem;">
+    <form action="{% url 'generate_report_view' client.id %}" method="post" class="stacked-form">
       {% csrf_token %}
-
-      <!-- Render form fields manually or loop if needed, but as_p is simple. 
-           Let's wrap it to ensure inputs get styled if they match the selectors in base.css -->
-      <div class="form-group">
-        {{ form.as_p }}
-      </div>
-
-      <div class="form-actions" style="justify-content: flex-start; margin-top: 1rem;">
-        <button type="submit" class="button">Gerar relatório</button>
-      </div>
+      {% for field in form %}
+        <div class="form-group">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {{ field.errors }}
+        </div>
+      {% endfor %}
+      <button type="submit" class="button button-full">Gerar relatorio</button>
     </form>
+  </section>
 
-    <hr style="border: 0; border-top: 1px solid var(--gray-light); margin: 2rem 0;">
-
-    <h3 style="font-size: 1.1rem; color: var(--gray-dark); margin-bottom: 1rem;">Relatórios disponíveis</h3>
+  <section class="card">
+    <h2>Arquivos disponiveis</h2>
+    <p class="section-copy">Os relatorios ficam disponiveis aqui depois da geracao.</p>
 
     {% if files %}
-    <ul style="list-style: none; padding: 0;">
-      {% for fn in files %}
-      <li
-        style="margin-bottom: 0.5rem; padding: 0.5rem; background: var(--gray-light); border-radius: 4px; display: flex; align-items: center;">
-        <span style="margin-right: 0.5rem;">📄</span>
-        <a href="{% url 'download_report' client.id fn %}" style="flex: 1;">{{ fn }}</a>
-        <a href="{% url 'download_report' client.id fn %}" title="Baixar" style="text-decoration: none;">⬇️</a>
-      </li>
-      {% endfor %}
-    </ul>
+      <ul class="report-list">
+        {% for fn in files %}
+          <li class="report-list__item">
+            <div>
+              <strong>{{ fn }}</strong>
+              <span>Arquivo gerado para download</span>
+            </div>
+            <a href="{% url 'download_report' client.id fn %}" class="button button-ghost button-small">Baixar</a>
+          </li>
+        {% endfor %}
+      </ul>
     {% else %}
-    <div style="text-align: center; padding: 2rem; color: #999; background: #f9f9f9; border-radius: 4px;">
-      Não há relatórios gerados ainda.
-    </div>
+      <div class="empty-state compact">
+        <p>Nenhum relatorio gerado ainda.</p>
+      </div>
     {% endif %}
-  </div>
+  </section>
 </div>
 {% endblock %}
