@@ -4,9 +4,15 @@ from django.core.management import call_command
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from datetime import timedelta
+from unittest.mock import Mock, patch
 
-from newsclip.models import Article, Client, GeneratedReport
+from feedparser import FeedParserDict
+
+from newsclip.management.commands.fetch_news import Command
+from newsclip.models import Article, Client, GeneratedReport, Source
 from newsclip.templatetags.source_extras import domain
+from newsclip.utils import save_article
 from newsclip.views import check_task_status
 
 
@@ -15,6 +21,61 @@ class DomainFilterTests(TestCase):
         """domain filter deve extrair o host sem o prefixo www."""
         url = "https://www.exemplo.com/algum"
         self.assertEqual(domain(url), "exemplo.com")
+
+
+class NewsCollectionRecallTests(TestCase):
+    def setUp(self):
+        self.client_a = Client.objects.create(name="Cliente A", keywords="São Paulo")
+        self.client_b = Client.objects.create(name="Cliente B", keywords="São Paulo")
+
+    def test_same_url_can_be_relevant_to_different_clients(self):
+        url = "https://example.com/noticia-compartilhada"
+
+        first = save_article(self.client_a, "Notícia", url, None, "Exemplo")
+        duplicate = save_article(self.client_a, "Notícia", url, None, "Exemplo")
+        second_client = save_article(self.client_b, "Notícia", url, None, "Exemplo")
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(duplicate)
+        self.assertIsNotNone(second_client)
+        self.assertEqual(Article.objects.filter(url=url).count(), 2)
+
+    @patch("newsclip.management.commands.fetch_news.feedparser.parse")
+    def test_rss_matches_accent_insensitive_keyword_in_summary(self, parse_mock):
+        source = Source.objects.create(
+            name="Fonte RSS",
+            url="https://example.com/feed.xml",
+            source_type="RSS",
+        )
+        parse_mock.return_value = FeedParserDict(
+            entries=[
+                FeedParserDict(
+                    title="Agenda econômica da semana",
+                    link="https://example.com/agenda",
+                    summary="Evento importante em Sao Paulo.",
+                )
+            ]
+        )
+
+        saved = Command().fetch_single_rss(
+            self.client_a, source, ["São Paulo"], timezone.now() - timedelta(days=90)
+        )
+
+        self.assertEqual(saved, 1)
+        self.assertTrue(Article.objects.filter(client=self.client_a, url="https://example.com/agenda").exists())
+
+    @patch("newsclip.management.commands.fetch_news.feedparser.parse")
+    @patch("newsclip.management.commands.fetch_news.requests.get")
+    def test_google_rss_uses_one_query_per_keyword(self, get_mock, parse_mock):
+        get_mock.return_value = Mock(content=b"", status_code=200)
+        get_mock.return_value.raise_for_status.return_value = None
+        parse_mock.return_value = FeedParserDict(entries=[])
+
+        Command().fetch_google_rss(
+            self.client_a, ["termo principal", "termo secundário"], timezone.now() - timedelta(days=90)
+        )
+
+        self.assertEqual(get_mock.call_count, 2)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
