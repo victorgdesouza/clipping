@@ -12,6 +12,7 @@ from dateutil import parser as date_parser
 
 # Importações adicionadas para SearchVector
 from django.contrib.postgres.search import SearchVector
+from django.db import connection
 from django.db.models import Value # Para tratar campos potencialmente nulos no SearchVector
 
 from newsclip.models import Article
@@ -159,30 +160,37 @@ def save_article(client, title, url, raw_date, source, content_text=None):
 
     article_instance = None
     try:
-        article_instance = Article.objects.create(
+        article_instance, created = Article.objects.get_or_create(
             client=client,
-            title=processed_title,
             url=url,
-            published_at=dt,  # <--- CORREÇÃO APLICADA AQUI
-            source=processed_source,
-            summary=summary_text,
-            topic=topic_classification,
-            content=content_text if content_text else "",
+            defaults={
+                "title": processed_title,
+                "published_at": dt,
+                "source": processed_source,
+                "summary": summary_text,
+                "topic": topic_classification,
+                "content": content_text if content_text else "",
+            },
         )
+        if not created:
+            return None
         # print(f"Artigo CRIADO: {article_instance.title_truncado}") # title_truncado é uma property no modelo Article
 
-        # Lógica do SearchVector (adaptada para SQLite como no update_vectors.py)
-        title_for_vector = article_instance.title or ""
-        summary_for_vector = article_instance.summary or ""
-        content_for_vector = article_instance.content or ""
-
-        # Para SQLite, atribuímos a string concatenada.
-        # Para PostgreSQL (produção), você usaria a forma com SearchVector(...) com pesos/config.
-        # Considere uma lógica condicional baseada no settings.DATABASES['default']['ENGINE'] se necessário.
-        combined_text_for_fts = f"{title_for_vector} {summary_for_vector} {content_for_vector}"
-        article_instance.search_vector = combined_text_for_fts
-        
-        article_instance.save(update_fields=['search_vector'])
+        if connection.vendor == "postgresql":
+            # Grave um tsvector real; atribuir texto puro a SearchVectorField deixa
+            # o índice inválido ou vazio no PostgreSQL.
+            vector = (
+                SearchVector("title", weight="A", config="portuguese")
+                + SearchVector("summary", weight="B", config="portuguese")
+                + SearchVector("content", weight="C", config="portuguese")
+                + SearchVector("source", weight="D", config="portuguese")
+            )
+            Article.objects.filter(pk=article_instance.pk).update(search_vector=vector)
+        else:
+            article_instance.search_vector = " ".join(
+                filter(None, [article_instance.title, article_instance.summary, article_instance.content, article_instance.source])
+            )
+            article_instance.save(update_fields=["search_vector"])
         # print(f"Search vector atualizado para: {article_instance.title_truncado}")
 
     except IntegrityError:

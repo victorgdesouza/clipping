@@ -64,7 +64,7 @@ class Client(models.Model):
 class Article(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="articles", db_index=True)
     title = models.CharField("Titulo", max_length=255, db_index=True)
-    url = models.TextField("Link", unique=True)
+    url = models.TextField("Link")
     content = models.TextField("Conteudo", blank=True, null=True)
     summary = models.TextField("Resumo", blank=True, null=True)
     topic = models.CharField("Topico", max_length=255, blank=True, db_index=True)
@@ -79,6 +79,9 @@ class Article(models.Model):
         ordering = ['-published_at']
         indexes = [
             GinIndex(fields=['search_vector']),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=['client', 'url'], name='unique_article_url_per_client'),
         ]
         verbose_name = "Noticia"
         verbose_name_plural = "Noticias"

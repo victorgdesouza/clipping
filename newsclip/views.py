@@ -5,7 +5,7 @@ from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.postgres.search import SearchQuery
+from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.core.management import call_command
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import connection
@@ -42,8 +42,10 @@ def apply_article_search(queryset, search_text):
         return queryset
 
     if connection.vendor == "postgresql":
-        query_fts = SearchQuery(search_text, search_type="plain")
-        return queryset.filter(search_vector=query_fts)
+        query_fts = SearchQuery(search_text, search_type="websearch", config="portuguese")
+        return queryset.annotate(
+            search_rank=SearchRank("search_vector", query_fts),
+        ).filter(search_vector=query_fts).order_by("-search_rank", "-published_at")
 
     return queryset.filter(
         Q(title__icontains=search_text)
@@ -181,6 +183,8 @@ def client_news(request, client_id):
         articles_qs = articles_qs.order_by("published_at")
     elif sort_order == "source":
         articles_qs = articles_qs.order_by("source", "-published_at")
+    elif current_search_query and connection.vendor == "postgresql":
+        articles_qs = articles_qs.order_by("-search_rank", "-published_at")
     else:
         articles_qs = articles_qs.order_by("-published_at")
 
