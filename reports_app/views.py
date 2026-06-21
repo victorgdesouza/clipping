@@ -1,3 +1,4 @@
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import TemplateView
 from django.shortcuts import get_object_or_404
 from newsclip.models import Client, Article
@@ -7,12 +8,13 @@ from django.db.models import Count, Sum
 from datetime import date
 
 
-class MonthlyReportView(TemplateView):
+class MonthlyReportView(LoginRequiredMixin, TemplateView):
     template_name = 'reports_app/monthly.html'
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        client   = get_object_or_404(Client, pk=kwargs['client_id'])
+        clients = Client.objects.all() if self.request.user.is_superuser else Client.objects.filter(users=self.request.user)
+        client = get_object_or_404(clients, pk=kwargs['client_id'])
         year, mo = kwargs['year'], kwargs['month']
         # filtra clippings do mês e do cliente
         config, _ = ReportConfig.objects.get_or_create(client=client,
@@ -29,5 +31,6 @@ class MonthlyReportView(TemplateView):
 
         # Tabela completa
         ctx['entries'] = entries.select_related('article')
+        ctx['client'] = client
         return ctx
 

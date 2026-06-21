@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import SearchVectorField
@@ -90,3 +91,36 @@ class Article(models.Model):
     @property
     def title_truncado(self):
         return (self.title[:47] + "...") if self.title and len(self.title) > 50 else self.title
+
+
+class GeneratedReport(models.Model):
+    FORMAT_CHOICES = [
+        ("pdf", "PDF"),
+        ("xlsx", "Excel"),
+        ("csv", "CSV"),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="generated_reports")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="generated_reports",
+        null=True,
+        blank=True,
+    )
+    filename = models.CharField(max_length=255)
+    format = models.CharField(max_length=10, choices=FORMAT_CHOICES)
+    period_label = models.CharField(max_length=50)
+    content_type = models.CharField(max_length=100)
+    content = models.BinaryField()
+    size = models.PositiveBigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["client", "filename"], name="unique_report_filename_per_client")
+        ]
+
+    def __str__(self):
+        return f"{self.client}: {self.filename}"

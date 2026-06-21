@@ -1,8 +1,5 @@
 import json
-import mimetypes
-import pathlib
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -14,15 +11,14 @@ from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import connection
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
-from django.http import FileResponse, Http404, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
-from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 
 from .forms import ClientForm, ReportForm
-from .models import Article, Client
+from .models import Article, Client, GeneratedReport
 
 
 def user_can_access_client(user, client):
@@ -305,6 +301,9 @@ def fetch_news_view(request, client_id):
 def check_task_status(request, task_id):
     from django_q.models import Task
 
+    if not request.user.is_superuser:
+        return HttpResponseForbidden()
+
     try:
         task = Task.objects.get(id=task_id)
         return JsonResponse(
@@ -326,24 +325,12 @@ def client_reports(request, client_id):
     if not user_can_access_client(request.user, client):
         return HttpResponseForbidden()
 
-    reports_media_path = pathlib.Path(settings.MEDIA_ROOT) / "reports"
-    reports_media_path.mkdir(parents=True, exist_ok=True)
-    client_slug = slugify(client.name)
-
-    try:
-        files = sorted(
-            [file for file in reports_media_path.glob(f"relatorio_{client_slug}_*.*") if file.is_file()],
-            key=lambda file: file.stat().st_mtime,
-            reverse=True,
-        )
-        file_names = [file.name for file in files]
-    except FileNotFoundError:
-        file_names = []
+    reports = GeneratedReport.objects.filter(client=client).select_related("created_by")
 
     return render(
         request,
         "newsclip/client_reports.html",
-        {"client": client, "files": file_names, "form": ReportForm(request.POST or None)},
+        {"client": client, "reports": reports, "form": ReportForm(request.POST or None)},
     )
 
 
@@ -361,10 +348,16 @@ def generate_report_view(request, client_id):
         label_period = f"ultimos {days_str} dias" if days_str != "all" else "todas as noticias"
 
         try:
-            call_command("generate_report", client_id=client_id, days=days_str, format=out_format)
+            call_command(
+                "generate_report",
+                client_id=client_id,
+                days=days_str,
+                format=out_format,
+                created_by_id=request.user.pk,
+            )
             messages.success(
                 request,
-                f"Geracao de relatorio ({label_period}, formato {out_format.upper()}) para '{client.name}' iniciada.",
+                f"Relatorio ({label_period}, formato {out_format.upper()}) para '{client.name}' gerado com sucesso.",
             )
         except Exception as exc:
             messages.error(request, f"Erro ao iniciar a geracao do relatorio: {exc}")
@@ -379,28 +372,13 @@ def generate_report_view(request, client_id):
 
 
 @login_required
-def download_report(request, client_id, filename):
+def download_report(request, client_id, report_id):
     client = get_object_or_404(Client, pk=client_id)
     if not user_can_access_client(request.user, client):
         return HttpResponseForbidden()
-    if ".." in filename or filename.startswith("/"):
-        raise Http404("Nome de arquivo invalido.")
 
-    reports_dir = pathlib.Path(settings.MEDIA_ROOT) / "reports"
-    path_to_file = reports_dir / filename
-
-    if not path_to_file.exists() or not path_to_file.is_file():
-        raise Http404(f"Arquivo '{filename}' nao encontrado.")
-
-    try:
-        path_to_file.resolve().relative_to(reports_dir.resolve())
-    except ValueError:
-        raise Http404("Acesso ao arquivo fora do diretorio permitido.")
-
-    content_type, _ = mimetypes.guess_type(filename)
-    return FileResponse(
-        open(path_to_file, "rb"),
-        as_attachment=True,
-        filename=filename,
-        content_type=content_type or "application/octet-stream",
-    )
+    report = get_object_or_404(GeneratedReport, pk=report_id, client=client)
+    response = HttpResponse(bytes(report.content), content_type=report.content_type)
+    response["Content-Disposition"] = f'attachment; filename="{report.filename}"'
+    response["Content-Length"] = report.size
+    return response
