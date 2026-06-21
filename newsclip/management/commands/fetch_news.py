@@ -29,6 +29,8 @@ import re
 # Constantes
 MAX_NEWSAPI_DAYS = 30
 LOOKBACK_DAYS = 90
+MAX_API_PAGES = config("NEWS_FETCH_MAX_PAGES", default=5, cast=int)
+MAX_GOOGLE_RSS_QUERIES = config("GOOGLE_RSS_MAX_QUERIES", default=20, cast=int)
 
 # Variáveis de API lidas do .env ou ambiente
 NEWSDATA_KEY = config("NEWSDATA_API_KEY", default=None)
@@ -38,6 +40,14 @@ NEWSAPI_KEY = config("NEWSAPI_API_KEY", default=None)
 def strip_accents(s: str) -> str:
     if not s: return ""
     return ''.join(c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c))
+
+def normalize_for_match(value: str) -> str:
+    """Normaliza acentos, caixa e espaços sem deformar a consulta enviada à fonte."""
+    return re.sub(r"\s+", " ", strip_accents(value or "").casefold()).strip()
+
+def contains_keyword(text: str, keywords) -> bool:
+    normalized_text = normalize_for_match(text)
+    return any(normalize_for_match(keyword) in normalized_text for keyword in keywords)
 
 def build_advanced_query(keywords, operators=None):
     if not keywords: return ""
@@ -53,6 +63,22 @@ def build_advanced_query(keywords, operators=None):
             parts.append(op)
         parts.append(f'"{kw}"' if ' ' in kw else kw)
     return ' '.join(parts)
+
+def build_query_batches(keywords, max_length):
+    """Divide termos em consultas aceitas pelas APIs sem descartar palavras-chave."""
+    batches = []
+    current = []
+    for keyword in keywords:
+        token = f'"{keyword}"' if ' ' in keyword else keyword
+        candidate = " OR ".join([*current, token])
+        if current and len(candidate) > max_length:
+            batches.append(" OR ".join(current))
+            current = [token]
+        else:
+            current.append(token)
+    if current:
+        batches.append(" OR ".join(current))
+    return batches
 
 class Command(BaseCommand):
     help = "Busca notícias para cada cliente e salva as novas entradas"
@@ -101,24 +127,24 @@ class Command(BaseCommand):
         for client in clients:
             self.log(f"--- Processando cliente: {client.name} ---", client=client)
             kws_raw = client.keywords or ""
-            kws = [strip_accents(kw.strip().lower()) for kw in kws_raw.split(",") if kw.strip()]
+            # Preserve a grafia original nas APIs (acentos melhoram a precisão),
+            # normalizando apenas no momento da comparação local.
+            kws = list(dict.fromkeys(kw.strip() for kw in kws_raw.split(",") if kw.strip()))
 
             if not kws:
                 self.log(f"Cliente {client.name}: sem keywords definidas. Pulando.", level='WARNING', client=client)
                 continue
             
-            api_query_string = build_advanced_query(kws, getattr(client, "search_operators", None))
-            
             futures_map = {}
             with ThreadPoolExecutor(max_workers=5) as executor:
                 # 1. APIs Pagas (NewsAPI, NewsData)
                 if NEWSAPI_KEY or force_run:
-                    futures_map[executor.submit(self.fetch_newsapi, client, api_query_string, since_dt, utc_now)] = "NewsAPI"
+                    futures_map[executor.submit(self.fetch_newsapi, client, kws, since_dt, utc_now)] = "NewsAPI"
                 else:
                     self.log(f"NewsAPI KEY não configurada. Pulando.", level='WARNING', client=client)
 
                 if NEWSDATA_KEY or force_run:
-                    futures_map[executor.submit(self.fetch_newsdata, client, api_query_string, since_dt, utc_now)] = "NewsData"
+                    futures_map[executor.submit(self.fetch_newsdata, client, kws, since_dt, utc_now)] = "NewsData"
                 else:
                     self.log(f"NewsData KEY não configurada. Pulando.", level='WARNING', client=client)
                 
@@ -162,36 +188,49 @@ class Command(BaseCommand):
             return entry.description
         return None
 
-    def fetch_newsdata(self, client, query, since_dt, until_dt):
+    def fetch_newsdata(self, client, keywords, since_dt, until_dt):
         count_saved = 0
         if not NEWSDATA_KEY: return 0
-        
-        params = {
-            'apikey': NEWSDATA_KEY, 'q': query, 'language': 'pt',
-            'from_date': since_dt.strftime('%Y-%m-%d'),
-            'to_date': until_dt.strftime('%Y-%m-%d'),
-        }
+
         try:
-            response = requests.get(NEWSDATA_URL, params=params, timeout=30)
-            if response.status_code == 422:
-                 error_message = response.json().get('results', {}).get('message', response.text)
-                 if "from_date" in error_message:
-                    params.pop('from_date', None)
-                    params.pop('to_date', None)
+            # NewsData impõe um limite curto para q; lotes evitam erro 422 em
+            # clientes com muitos termos sem multiplicar uma chamada por termo.
+            for query in build_query_batches(keywords, max_length=90):
+                params = {
+                    'apikey': NEWSDATA_KEY, 'q': query, 'language': 'pt',
+                    'from_date': since_dt.strftime('%Y-%m-%d'),
+                    'to_date': until_dt.strftime('%Y-%m-%d'),
+                }
+                response = requests.get(NEWSDATA_URL, params=params, timeout=30)
+                if response.status_code == 422:
+                    error_message = response.json().get('results', {}).get('message', response.text)
+                    if "from_date" in error_message:
+                        params.pop('from_date', None)
+                        params.pop('to_date', None)
+                        response = requests.get(NEWSDATA_URL, params=params, timeout=30)
+
+                response.raise_for_status()
+                data = response.json()
+                for _page_number in range(MAX_API_PAGES):
+                    articles = data.get('results', [])
+                    for item in articles:
+                        url = item.get('link') or item.get('source_url')
+                        title = item.get('title')
+                        if not url or not title: continue
+                        content_text = item.get('content') or item.get('description')
+                        created = save_article(
+                            client=client, title=title, url=url, raw_date=item.get('pubDate'),
+                            source=item.get('source_id') or "NewsData.io", content_text=content_text,
+                        )
+                        count_saved += int(created is not None)
+
+                    next_page = data.get("nextPage")
+                    if not next_page:
+                        break
+                    params["page"] = next_page
                     response = requests.get(NEWSDATA_URL, params=params, timeout=30)
-            
-            response.raise_for_status()
-            data = response.json()
-            articles = data.get('results', [])
-            
-            for item in articles:
-                url = item.get('link') or item.get('source_url')
-                title = item.get('title')
-                if not url or not title: continue
-                content_text = item.get('content') or item.get('description')
-                save_article(client=client, title=title, url=url, raw_date=item.get('pubDate'),
-                             source=item.get('source_id') or "NewsData.io", content_text=content_text)
-                count_saved += 1
+                    response.raise_for_status()
+                    data = response.json()
         except Exception as e:
             self.log(f"Erro NewsData: {e}", level='ERROR', client=client)
         return count_saved
@@ -199,36 +238,46 @@ class Command(BaseCommand):
     def fetch_google_rss(self, client, keywords_list, since_dt):
         count_saved = 0
         if not keywords_list: return 0
-        query_string = " OR ".join(f'"{kw}"' for kw in keywords_list)
-        rss_url = f"https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-BR&q={quote_plus(query_string)}"
         try:
-            feed = feedparser.parse(rss_url)
-            for entry in feed.entries:
-                url = entry.get('link')
-                title = entry.get('title')
-                if not url or not title: continue
-                
-                # REMOVIDO: Filtro estrito de título para permitir menções no corpo
-                # title_lower = title.lower()
-                # if not any(kw.lower() in title_lower for kw in keywords_list): continue
-                
-                pub_date_parsed = entry.get('published_parsed') or entry.get('updated_parsed')
-                publication_date = None
-                if pub_date_parsed:
-                    try: 
-                        dt_naive = datetime.fromtimestamp(time.mktime(pub_date_parsed))
-                        publication_date = dj_timezone.make_aware(dt_naive, timezone.utc) if dj_timezone.is_naive(dt_naive) else dt_naive
-                    except: publication_date = dj_timezone.now()
-                
-                # ADICIONADO: Filtro de data rigoroso
-                if publication_date and publication_date < since_dt:
+            headers = {"User-Agent": "Mozilla/5.0 (compatible; ClippingApp/1.0)"}
+            # Consultas separadas evitam que uma expressão OR longa seja truncada
+            # e aumentam a cobertura de termos com volumes muito diferentes.
+            for keyword in keywords_list[:MAX_GOOGLE_RSS_QUERIES]:
+                try:
+                    query_string = f'"{keyword}" when:{LOOKBACK_DAYS}d'
+                    rss_url = f"https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-BR&q={quote_plus(query_string)}"
+                    response = requests.get(rss_url, headers=headers, timeout=30)
+                    response.raise_for_status()
+                    feed = feedparser.parse(response.content)
+                except Exception as exc:
+                    self.log(f"Google RSS falhou para o termo '{keyword}': {exc}", level='WARNING', client=client)
                     continue
 
-                content_text = self._get_content_from_entry(entry)
-                save_article(client=client, title=title, url=url,
-                             raw_date=publication_date.isoformat() if publication_date else None,
-                             source=entry.get('source', {}).get('title') or "Google News", content_text=content_text)
-                count_saved += 1
+                for entry in feed.entries:
+                    url = entry.get('link')
+                    title = entry.get('title')
+                    if not url or not title: continue
+
+                    pub_date_parsed = entry.get('published_parsed') or entry.get('updated_parsed')
+                    publication_date = None
+                    if pub_date_parsed:
+                        try:
+                            dt_naive = datetime.fromtimestamp(time.mktime(pub_date_parsed))
+                            publication_date = dj_timezone.make_aware(dt_naive, timezone.utc) if dj_timezone.is_naive(dt_naive) else dt_naive
+                        except (OverflowError, OSError, ValueError):
+                            publication_date = None
+
+                    if publication_date and publication_date < since_dt:
+                        continue
+
+                    content_text = self._get_content_from_entry(entry)
+                    created = save_article(
+                        client=client, title=title, url=url,
+                        raw_date=publication_date.isoformat() if publication_date else None,
+                        source=entry.get('source', {}).get('title') or "Google News",
+                        content_text=content_text,
+                    )
+                    count_saved += int(created is not None)
         except Exception as e:
             self.log(f"Erro Google RSS: {e}", level='ERROR', client=client)
         return count_saved
@@ -241,8 +290,11 @@ class Command(BaseCommand):
                 url = entry.get('link')
                 title = entry.get('title')
                 if not url or not title: continue
-                title_lower = title.lower()
-                if not any(kw.lower() in title_lower for kw in keywords_list): continue
+                content_text = self._get_content_from_entry(entry)
+                searchable_text = BeautifulSoup(
+                    f"{title} {content_text or ''}", "html.parser"
+                ).get_text(" ", strip=True)
+                if not contains_keyword(searchable_text, keywords_list): continue
                 
                 pub_date_parsed = entry.get('published_parsed') or entry.get('updated_parsed')
                 publication_date_aware = None
@@ -254,12 +306,11 @@ class Command(BaseCommand):
                 
                 if publication_date_aware and publication_date_aware < since_date_aware: continue
                 
-                content_text = self._get_content_from_entry(entry)
                 source_name = source_obj.name
-                save_article(client=client, title=title, url=url,
-                             raw_date=publication_date_aware.isoformat() if publication_date_aware else None,
-                             source=source_name, content_text=content_text)
-                count_saved += 1
+                created = save_article(client=client, title=title, url=url,
+                                       raw_date=publication_date_aware.isoformat() if publication_date_aware else None,
+                                       source=source_name, content_text=content_text)
+                count_saved += int(created is not None)
         except Exception as e:
             self.log(f"Erro RSS {source_obj.name}: {e}", level='ERROR', client=client, source=source_obj)
         return count_saved
@@ -286,7 +337,7 @@ class Command(BaseCommand):
             
             for title_tag in titles:
                 title = title_tag.get_text(strip=True)
-                if not title or not any(kw.lower() in title.lower() for kw in keywords_list): continue
+                if not title or not contains_keyword(title, keywords_list): continue
                 
                 # Tenta achar o link: ou é o próprio tag, ou um pai, ou um filho
                 link_tag = None
@@ -308,42 +359,49 @@ class Command(BaseCommand):
                 
                 article_url = urljoin(source_obj.url, article_url)
                 
-                save_article(client=client, title=title, url=article_url, raw_date=None,
-                             source=source_obj.name, content_text=None)
-                count_saved += 1
+                created = save_article(client=client, title=title, url=article_url, raw_date=None,
+                                       source=source_obj.name, content_text=None)
+                count_saved += int(created is not None)
 
         except Exception as e:
             self.log(f"Erro Scrape {source_obj.name}: {e}", level='ERROR', client=client, source=source_obj)
         return count_saved
 
-    def fetch_newsapi(self, client, query_string, since_date_aware, until_date_aware):
+    def fetch_newsapi(self, client, keywords, since_date_aware, until_date_aware):
         count_saved = 0
         if not NEWSAPI_KEY: return 0
-        if not query_string: return 0
+        if not keywords: return 0
 
         api = NewsApiClient(api_key=NEWSAPI_KEY)
         domains_for_api = ','.join(d.strip() for d in client.domains.split(',')) if client.domains else None
 
         try:
-            all_articles_response = api.get_everything(
-                q=query_string, domains=domains_for_api,
-                from_param=since_date_aware.strftime('%Y-%m-%d'),
-                to=until_date_aware.strftime('%Y-%m-%d'),
-                language='pt', sort_by='relevancy', page_size=100
-            )
-            
-            articles = all_articles_response.get('articles', [])
-            for article_data in articles:
-                url = article_data.get('url')
-                title = article_data.get('title')
-                if not url or not title: continue
-                
-                content_text = article_data.get('description')
-                source_name = article_data.get('source', {}).get('name') or "NewsAPI"
-                
-                save_article(client=client, title=title, url=url, raw_date=article_data.get('publishedAt'),
-                             source=source_name, content_text=content_text)
-                count_saved += 1
+            newsapi_since = max(since_date_aware, until_date_aware - timedelta(days=MAX_NEWSAPI_DAYS))
+            for query_string in build_query_batches(keywords, max_length=450):
+                for page in range(1, MAX_API_PAGES + 1):
+                    all_articles_response = api.get_everything(
+                        q=query_string, domains=domains_for_api,
+                        from_param=newsapi_since.strftime('%Y-%m-%d'),
+                        to=until_date_aware.strftime('%Y-%m-%d'),
+                        language='pt', sort_by='publishedAt', page_size=100, page=page,
+                    )
+
+                    articles = all_articles_response.get('articles', [])
+                    for article_data in articles:
+                        url = article_data.get('url')
+                        title = article_data.get('title')
+                        if not url or not title: continue
+
+                        content_text = article_data.get('description')
+                        source_name = article_data.get('source', {}).get('name') or "NewsAPI"
+                        created = save_article(
+                            client=client, title=title, url=url, raw_date=article_data.get('publishedAt'),
+                            source=source_name, content_text=content_text,
+                        )
+                        count_saved += int(created is not None)
+
+                    if len(articles) < 100:
+                        break
         except Exception as e:
             self.log(f"Erro NewsAPI: {e}", level='ERROR', client=client)
         return count_saved
