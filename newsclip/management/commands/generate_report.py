@@ -1,16 +1,19 @@
 # newsclip/management/commands/generate_report.py
 
-import os
+import html
 import pathlib
 
 import pandas as pd
-import pdfkit
 from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.text import slugify
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from newsclip.models import Client, Article
 
@@ -123,49 +126,84 @@ class Command(BaseCommand):
                         width = max(df[col].astype(str).map(len).max(), len(col)) + 2
                         worksheet.set_column(i, i, width)
                 self.stdout.write(self.style.SUCCESS(
-                    f"{client.name}: relatório Excel gerado → {output_path}"
+                    f"{client.name}: relatório Excel gerado -> {output_path}"
                 ))
             else:  # CSV
                 df.to_csv(output_path, index=False, encoding="utf-8")
                 self.stdout.write(self.style.SUCCESS(
-                    f"{client.name}: relatório CSV gerado → {output_path}"
+                    f"{client.name}: relatório CSV gerado -> {output_path}"
                 ))
             return
 
-        # === PDF (wkhtmltopdf) ===
-        bin_path = getattr(settings, "WKHTMLTOPDF_CMD", None)
-        if not bin_path or not os.path.isfile(bin_path):
-            import shutil
-            bin_path = shutil.which("wkhtmltopdf")
-            if not bin_path:
-                self.stderr.write(self.style.ERROR(
-                    "❌ wkhtmltopdf não encontrado. Configure WKHTMLTOPDF_CMD."
-                ))
-                return
-
-        html = render_to_string("report_templates/report.html", {
-            "client": client,
-            "articles": df.to_dict(orient="records"),
-            "interval": "Completo" if days is None else f"Últimos {days} dias",
-            "generated_at": now,
-        })
-        config  = pdfkit.configuration(wkhtmltopdf=bin_path)
-        options = {
-            "encoding":    "UTF-8",
-            "page-size":   "A4",
-            "margin-top":    "1cm",
-            "margin-right":  "1cm",
-            "margin-bottom": "1cm",
-            "margin-left":   "1cm",
-        }
-        pdfkit.from_string(
-            html,
-            str(output_path),
-            configuration=config,
-            options=options
+        # === PDF (ReportLab, sem binario externo) ===
+        styles = getSampleStyleSheet()
+        cell_style = ParagraphStyle(
+            "ReportCell",
+            parent=styles["BodyText"],
+            fontSize=7,
+            leading=9,
+            splitLongWords=True,
         )
+        header_style = ParagraphStyle(
+            "ReportHeader",
+            parent=cell_style,
+            textColor=colors.white,
+            fontName="Helvetica-Bold",
+        )
+        document = SimpleDocTemplate(
+            str(output_path),
+            pagesize=landscape(A4),
+            rightMargin=1 * cm,
+            leftMargin=1 * cm,
+            topMargin=1 * cm,
+            bottomMargin=1 * cm,
+            title=f"Relatorio de clipping - {client.name}",
+        )
+        story = [
+            Paragraph(f"Relatorio de clipping - {html.escape(client.name)}", styles["Title"]),
+            Paragraph(
+                "Periodo: " + ("Completo" if days is None else f"Ultimos {days} dias"),
+                styles["BodyText"],
+            ),
+            Paragraph(f"Gerado em: {now.strftime('%d/%m/%Y %H:%M')}", styles["BodyText"]),
+            Spacer(1, 0.4 * cm),
+        ]
+        table_data = [
+            [Paragraph(label, header_style) for label in ("Titulo", "Data", "Fonte", "Link")]
+        ]
+        for row in data:
+            table_data.append(
+                [
+                    Paragraph(html.escape(str(row["Título"])), cell_style),
+                    Paragraph(html.escape(str(row["Data"])), cell_style),
+                    Paragraph(html.escape(str(row["Fonte"])), cell_style),
+                    Paragraph(html.escape(str(row["Link"])), cell_style),
+                ]
+            )
+
+        table = Table(
+            table_data,
+            colWidths=[8.5 * cm, 3.2 * cm, 4.2 * cm, 10 * cm],
+            repeatRows=1,
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2457A6")),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2CC")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F4F7FA")]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        story.append(table)
+        document.build(story)
         self.stdout.write(self.style.SUCCESS(
-            f"{client.name}: relatório PDF gerado → {output_path}"
+            f"{client.name}: relatório PDF gerado -> {output_path}"
         ))
 
 
