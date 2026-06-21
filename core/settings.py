@@ -167,11 +167,6 @@ MEDIA_URL = "/media/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-WKHTMLTOPDF_CMD = os.getenv(
-    "WKHTMLTOPDF_CMD",
-    r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe",
-)
-
 Q_CLUSTER = {
     "name": "newsclip_cluster",
     "workers": int(os.getenv("Q_CLUSTER_WORKERS", "4")),
