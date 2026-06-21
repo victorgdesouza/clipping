@@ -50,5 +50,5 @@ urlpatterns = [
 
     path('dashboard/<int:client_id>/reports/', login_required(client_reports), name='client_reports'),
     path('dashboard/<int:client_id>/reports/generate/', login_required(generate_report_view), name='generate_report_view'),
-    path('dashboard/<int:client_id>/download/<str:filename>/', login_required(download_report), name='download_report'),
+    path('dashboard/<int:client_id>/download/<int:report_id>/', login_required(download_report), name='download_report'),
 ]

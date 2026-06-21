@@ -33,15 +33,18 @@
     <h2>Arquivos disponiveis</h2>
     <p class="section-copy">Os relatorios ficam disponiveis aqui depois da geracao.</p>
 
-    {% if files %}
+    {% if reports %}
       <ul class="report-list">
-        {% for fn in files %}
+        {% for report in reports %}
           <li class="report-list__item">
             <div>
-              <strong>{{ fn }}</strong>
-              <span>Arquivo gerado para download</span>
+              <strong>{{ report.filename }}</strong>
+              <span>
+                {{ report.created_at|date:"d/m/Y H:i" }} · {{ report.size|filesizeformat }}
+                {% if report.created_by %}· {{ report.created_by.username }}{% endif %}
+              </span>
             </div>
-            <a href="{% url 'download_report' client.id fn %}" class="button button-ghost button-small">Baixar</a>
+            <a href="{% url 'download_report' client.id report.id %}" class="button button-ghost button-small">Baixar</a>
           </li>
         {% endfor %}
       </ul>
