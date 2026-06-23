@@ -16,6 +16,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
+from django_q.tasks import async_task
 
 from .forms import ClientForm, ReportForm
 from .models import Article, Client, GeneratedReport
@@ -283,21 +284,29 @@ def fetch_news_view(request, client_id):
     if not user_can_access_client(request.user, client):
         return HttpResponseForbidden("Voce nao tem permissao para buscar noticias para este cliente.")
 
-    try:
-        call_command("fetch_news", client_id=client_id)
-        message_text = "Busca finalizada."
-        status_ok = True
-    except Exception as exc:
-        message_text = f"Erro ao buscar noticias: {exc}"
-        status_ok = False
+    task_id = async_task(
+        "newsclip.tasks.fetch_news_task",
+        client_id,
+        task_name=f"fetch-news-client-{client_id}",
+    )
+    allowed_tasks = request.session.get("news_fetch_tasks", {})
+    allowed_tasks[str(task_id)] = client_id
+    request.session["news_fetch_tasks"] = allowed_tasks
+
+    message_text = "Busca iniciada em segundo plano."
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
-        return JsonResponse({"status": "ok" if status_ok else "error", "message": message_text})
+        return JsonResponse(
+            {
+                "status": "queued",
+                "message": message_text,
+                "task_id": str(task_id),
+                "status_url": reverse("check_task_status", args=[task_id]),
+            },
+            status=202,
+        )
 
-    if status_ok:
-        messages.success(request, message_text)
-    else:
-        messages.error(request, message_text)
+    messages.success(request, message_text)
     return redirect("client_news", client_id=client_id)
 
 
@@ -305,7 +314,12 @@ def fetch_news_view(request, client_id):
 def check_task_status(request, task_id):
     from django_q.models import Task
 
-    if not request.user.is_superuser:
+    allowed_client_id = getattr(request, "session", {}).get("news_fetch_tasks", {}).get(str(task_id))
+    if allowed_client_id is None:
+        return HttpResponseForbidden()
+
+    client = get_object_or_404(Client, pk=allowed_client_id)
+    if not user_can_access_client(request.user, client):
         return HttpResponseForbidden()
 
     try:
