@@ -16,6 +16,7 @@ from newsclip.views import (
     ClientDeleteView,
     client_news,
     fetch_news_view,
+    check_task_status,
     bulk_update_news,
     client_reports,
     generate_report_view,
@@ -44,6 +45,7 @@ urlpatterns = [
 
     path('dashboard/<int:client_id>/news/', login_required(client_news), name='client_news'),
     path('dashboard/<int:client_id>/news/fetch/', login_required(fetch_news_view), name='fetch_news'),
+    path('task_status/<str:task_id>/', check_task_status, name='check_task_status'),
     path('dashboard/<int:client_id>/news/bulk-update/', login_required(bulk_update_news), name='bulk_update_news'),
     path('noticias/todos/', views.BuscarTodasNoticiasView.as_view(), name='buscar_todas_noticias'),
     path('api/noticias/cliente/<int:pk>/', views.noticias_cliente_json, name='noticias_cliente_json'),

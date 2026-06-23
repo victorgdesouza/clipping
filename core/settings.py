@@ -180,10 +180,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 Q_CLUSTER = {
     "name": "newsclip_cluster",
-    "workers": int(os.getenv("Q_CLUSTER_WORKERS", "4")),
+    # Um worker compartilha a instancia gratuita com o Gunicorn sem multiplicar
+    # o consumo de memoria. A fila ORM preserva as tarefas no PostgreSQL.
+    "workers": int(os.getenv("Q_CLUSTER_WORKERS", "1")),
     "recycle": 500,
-    "timeout": 300,
-    "retry": 360,
+    "timeout": int(os.getenv("Q_CLUSTER_TIMEOUT", "1800")),
+    "retry": int(os.getenv("Q_CLUSTER_RETRY", "1860")),
     "compress": True,
     "save_limit": 250,
     "queue_limit": 500,
