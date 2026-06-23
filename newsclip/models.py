@@ -10,17 +10,114 @@ class Source(models.Model):
         ('RSS', 'RSS Feed'),
         ('SCRAPE', 'Web Scrape'),
         ('API', 'API (NewsAPI/NewsData)'),
+        ('DISCOVERED', 'Descoberta automatica'),
+        ('SITEMAP', 'Sitemap'),
+        ('NEWS_SITEMAP', 'Google News Sitemap'),
+        ('YOUTUBE', 'Canal do YouTube'),
+    ]
+    STATUS_CHOICES = [
+        ('CANDIDATE', 'Candidata'),
+        ('VERIFIED', 'Verificada'),
+        ('ACTIVE', 'Ativa'),
+        ('DEGRADED', 'Com falhas'),
+        ('BLOCKED', 'Bloqueada'),
+        ('DISCARDED', 'Descartada'),
     ]
     name = models.CharField("Nome da Fonte", max_length=200)
     url = models.URLField("URL do Feed/Site", max_length=500)
     source_type = models.CharField("Tipo", max_length=20, choices=SOURCE_TYPES, default='RSS')
     is_active = models.BooleanField("Ativa?", default=True)
+    domain = models.CharField("Dominio", max_length=255, blank=True, db_index=True)
+    status = models.CharField("Status", max_length=20, choices=STATUS_CHOICES, default='ACTIVE', db_index=True)
+    discovered_automatically = models.BooleanField("Descoberta automaticamente?", default=False)
+    discovery_provider = models.CharField("Provedor de descoberta", max_length=50, blank=True)
+    confidence_score = models.PositiveSmallIntegerField("Confianca", default=0)
+    discovery_count = models.PositiveIntegerField("Vezes descoberta", default=0)
+    first_discovered_at = models.DateTimeField("Primeira descoberta", null=True, blank=True)
+    last_discovered_at = models.DateTimeField("Ultima descoberta", null=True, blank=True)
     title_selector = models.CharField("Seletor de Titulo (CSS)", max_length=200, blank=True, null=True)
     link_selector = models.CharField("Seletor de Link (CSS)", max_length=200, blank=True, null=True)
     date_selector = models.CharField("Seletor de Data (CSS)", max_length=200, blank=True, null=True)
 
     def __str__(self):
         return f"{self.name} ({self.get_source_type_display()})"
+
+
+class SourceEndpoint(models.Model):
+    ENDPOINT_TYPES = [
+        ('RSS', 'RSS/Atom'),
+        ('SITEMAP', 'Sitemap'),
+        ('NEWS_SITEMAP', 'Google News Sitemap'),
+        ('YOUTUBE', 'YouTube'),
+        ('WEB', 'Pagina web'),
+    ]
+
+    source = models.ForeignKey(Source, on_delete=models.CASCADE, related_name="endpoints")
+    endpoint_type = models.CharField(max_length=20, choices=ENDPOINT_TYPES, db_index=True)
+    url = models.URLField(max_length=1000)
+    is_active = models.BooleanField(default=True, db_index=True)
+    last_success_at = models.DateTimeField(null=True, blank=True)
+    last_error_at = models.DateTimeField(null=True, blank=True)
+    consecutive_errors = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["source", "url"], name="unique_endpoint_url_per_source"),
+        ]
+
+    def __str__(self):
+        return f"{self.source.name}: {self.get_endpoint_type_display()}"
+
+
+class DiscoveryResult(models.Model):
+    client = models.ForeignKey('Client', on_delete=models.CASCADE, related_name="discovery_results")
+    source = models.ForeignKey(Source, on_delete=models.SET_NULL, related_name="discovery_results", null=True, blank=True)
+    provider = models.CharField(max_length=50, db_index=True)
+    query = models.TextField()
+    title = models.CharField(max_length=500)
+    url = models.URLField(max_length=2000)
+    description = models.TextField(blank=True)
+    relevance_score = models.PositiveSmallIntegerField(default=0)
+    is_relevant = models.BooleanField(default=False, db_index=True)
+    discovered_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["client", "provider", "-discovered_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.provider}: {self.title[:80]}"
+
+
+class DiscoveryRun(models.Model):
+    STATUS_CHOICES = [
+        ("RUNNING", "Em execucao"),
+        ("SUCCESS", "Concluida"),
+        ("PARTIAL", "Parcial"),
+        ("ERROR", "Erro"),
+    ]
+
+    client = models.ForeignKey('Client', on_delete=models.CASCADE, related_name="discovery_runs")
+    provider = models.CharField(max_length=50, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="RUNNING", db_index=True)
+    queries_count = models.PositiveIntegerField(default=0)
+    results_count = models.PositiveIntegerField(default=0)
+    relevant_count = models.PositiveIntegerField(default=0)
+    articles_count = models.PositiveIntegerField(default=0)
+    new_sources_count = models.PositiveIntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["client", "provider", "-started_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.client}: {self.provider} ({self.status})"
 
 
 class FetchLog(models.Model):
