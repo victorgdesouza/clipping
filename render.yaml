@@ -46,6 +46,16 @@ services:
         sync: false
       - key: GOOGLE_CSE_ID
         sync: false
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: BRAVE_SEARCH_MAX_QUERIES
+        value: "12"
+      - key: BRAVE_SEARCH_RESULTS_PER_QUERY
+        value: "20"
+      - key: DISCOVERY_PROFILE_NEW_SOURCES
+        value: "5"
+      - key: DISCOVERY_MIN_INTERVAL_HOURS
+        value: "24"
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
@@ -91,6 +101,16 @@ services:
         sync: false
       - key: GOOGLE_CSE_ID
         sync: false
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: BRAVE_SEARCH_MAX_QUERIES
+        value: "12"
+      - key: BRAVE_SEARCH_RESULTS_PER_QUERY
+        value: "20"
+      - key: DISCOVERY_PROFILE_NEW_SOURCES
+        value: "5"
+      - key: DISCOVERY_MIN_INTERVAL_HOURS
+        value: "24"
 
   - type: cron
     name: clipping-app-fetch-news
@@ -127,3 +147,13 @@ services:
         sync: false
       - key: GOOGLE_CSE_ID
         sync: false
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: BRAVE_SEARCH_MAX_QUERIES
+        value: "12"
+      - key: BRAVE_SEARCH_RESULTS_PER_QUERY
+        value: "20"
+      - key: DISCOVERY_PROFILE_NEW_SOURCES
+        value: "5"
+      - key: DISCOVERY_MIN_INTERVAL_HOURS
+        value: "24"
