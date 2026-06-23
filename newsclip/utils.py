@@ -195,11 +195,62 @@ def contains_excluded_term(client, *values: str) -> bool:
     return any(normalize_match_text(term) in searchable for term in client_excluded_terms(client))
 
 
+def client_positive_terms(client) -> list[str]:
+    values = [getattr(client, "name", "")]
+    values.extend((getattr(client, "keywords", "") or "").split(","))
+    result = []
+    seen = set()
+    for value in values:
+        clean = value.strip()
+        normalized = normalize_match_text(clean)
+        if clean and normalized not in seen:
+            result.append(clean)
+            seen.add(normalized)
+    return result
+
+
+def validate_article_candidate(client, title: str, content: str, url: str, source: str) -> dict:
+    if contains_excluded_term(client, title, content):
+        return {"status": "REJECTED", "score": 0, "reason": "Contem termo excluido"}
+
+    title_normalized = normalize_match_text(title)
+    content_normalized = normalize_match_text(content)
+    title_matches = []
+    content_matches = []
+    for term in client_positive_terms(client):
+        normalized = normalize_match_text(term)
+        if not normalized:
+            continue
+        if normalized in title_normalized:
+            title_matches.append(term)
+        elif normalized in content_normalized:
+            content_matches.append(term)
+
+    score = min(100, len(title_matches) * 70 + len(content_matches) * 35)
+    if canonicalize_article_url(url).startswith("https://"):
+        score = min(100, score + 5)
+    trusted_domains = [item.strip().casefold() for item in (getattr(client, "domains", "") or "").split(",") if item.strip()]
+    if any(domain in (url or "").casefold() for domain in trusted_domains):
+        score = min(100, score + 10)
+
+    if title_matches:
+        reason = f"Termo no titulo: {title_matches[0]}"
+    elif content_matches:
+        reason = f"Termo no conteudo: {content_matches[0]}"
+    else:
+        reason = "Sem termo explicito no titulo ou resumo"
+    return {
+        "status": "ACCEPTED" if score >= 35 else "REVIEW",
+        "score": score,
+        "reason": reason,
+    }
+
+
 # —————————————————————————————————————————
 # 4) Salvamento de artigos no banco
 # —————————————————————————————————————————
 
-def save_article(client, title, url, raw_date, source, content_text=None):
+def save_article(client, title, url, raw_date, source, content_text=None, provider="OTHER"):
     """
     Salva um artigo no banco de dados e calcula seu search_vector.
     """
@@ -218,7 +269,10 @@ def save_article(client, title, url, raw_date, source, content_text=None):
     processed_source = (source or "")[:Article._meta.get_field('source').max_length]
     processed_url = canonicalize_article_url(url)
 
-    if contains_excluded_term(client, processed_title, content_text or ""):
+    validation = validate_article_candidate(
+        client, processed_title, content_text or "", processed_url, processed_source
+    )
+    if validation["status"] == "REJECTED":
         return None
 
     dedup_key = article_dedup_key(processed_title, processed_source)
@@ -244,6 +298,10 @@ def save_article(client, title, url, raw_date, source, content_text=None):
                 topic=topic_classification,
                 content=content_text if content_text else "",
                 dedup_key=dedup_key,
+                provider=(provider or "OTHER")[:32].upper(),
+                relevance_score=validation["score"],
+                validation_status=validation["status"],
+                validation_reason=validation["reason"][:255],
             )
         # print(f"Artigo CRIADO: {article_instance.title_truncado}") # title_truncado é uma property no modelo Article
 

@@ -30,14 +30,11 @@ def env_int(name, default=0):
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-DEBUG = env_bool("DEBUG", default=not bool(DATABASE_URL))
+DEBUG = env_bool("DEBUG", default=False)
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 if not SECRET_KEY:
-    if DEBUG or not DATABASE_URL:
-        SECRET_KEY = "django-insecure-local-development-only"
-    else:
-        raise ImproperlyConfigured("Defina SECRET_KEY no ambiente.")
+    raise ImproperlyConfigured("Defina SECRET_KEY no ambiente.")
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
 ALLOWED_HOSTS += [".onrender.com"]
@@ -57,6 +54,12 @@ NEWSAPI_API_KEY = os.getenv("NEWSAPI_API_KEY", "")
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY", "")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+YOUTUBE_MAX_QUERIES = env_int("YOUTUBE_MAX_QUERIES", 2)
+GDELT_ENABLED = env_bool("GDELT_ENABLED", default=True)
+GDELT_MAX_QUERIES = env_int("GDELT_MAX_QUERIES", 3)
+GDELT_MAX_RECORDS = env_int("GDELT_MAX_RECORDS", 75)
+GDELT_MIN_INTERVAL_SECONDS = env_int("GDELT_MIN_INTERVAL_SECONDS", 6)
 BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
 BRAVE_SEARCH_MAX_QUERIES = env_int("BRAVE_SEARCH_MAX_QUERIES", 12)
 BRAVE_SEARCH_RESULTS_PER_QUERY = env_int("BRAVE_SEARCH_RESULTS_PER_QUERY", 20)

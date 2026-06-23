@@ -164,6 +164,11 @@ class Client(models.Model):
 
 
 class Article(models.Model):
+    VALIDATION_CHOICES = [
+        ("ACCEPTED", "Validada"),
+        ("REVIEW", "Revisar"),
+        ("REJECTED", "Rejeitada"),
+    ]
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="articles", db_index=True)
     title = models.CharField("Titulo", max_length=255, db_index=True)
     url = models.TextField("Link")
@@ -177,6 +182,15 @@ class Article(models.Model):
     updated_at = models.DateTimeField("Atualizado em", auto_now=True, null=True, blank=True)
     search_vector = SearchVectorField(null=True, blank=True)
     dedup_key = models.CharField(max_length=96, blank=True, db_index=True)
+    provider = models.CharField(max_length=32, default="OTHER", db_index=True)
+    relevance_score = models.PositiveSmallIntegerField(default=0, db_index=True)
+    validation_status = models.CharField(
+        max_length=16,
+        choices=VALIDATION_CHOICES,
+        default="ACCEPTED",
+        db_index=True,
+    )
+    validation_reason = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ['-published_at']

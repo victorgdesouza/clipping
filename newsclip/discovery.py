@@ -298,6 +298,7 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
                     raw_date=result.published_at,
                     source=source.name if source else domain_from_url(result.url),
                     content_text=result.description,
+                    provider="BRAVE",
                 )
                 stats["articles"] += int(saved is not None)
 
@@ -504,6 +505,7 @@ def fetch_sitemap_endpoint(command, client, endpoint: SourceEndpoint, keywords: 
                 raw_date=raw_date,
                 source=endpoint.source.name,
                 content_text=description,
+                provider="SITEMAP",
             )
             saved_count += int(saved is not None)
 
