@@ -18,6 +18,7 @@ from newsclip.discovery import (
     profile_source,
 )
 from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, GeneratedReport, Source, SourceEndpoint
+from newsclip.signals import update_search_vector
 from newsclip.templatetags.source_extras import domain
 from newsclip.utils import save_article
 from newsclip.views import check_task_status
@@ -83,6 +84,20 @@ class NewsCollectionRecallTests(TestCase):
         )
 
         self.assertEqual(get_mock.call_count, 2)
+
+
+class SearchVectorSignalTests(TestCase):
+    @patch("newsclip.signals.Article.objects.filter")
+    @patch("newsclip.signals.connection")
+    def test_postgres_uses_search_vector_expression_instead_of_raw_text(self, connection_mock, filter_mock):
+        connection_mock.vendor = "postgresql"
+        instance = Mock(pk=123, title="Título", summary="Resumo", content="Conteúdo", source="Fonte")
+
+        update_search_vector(Article, instance, created=True)
+
+        filter_mock.assert_called_once_with(pk=123)
+        vector = filter_mock.return_value.update.call_args.kwargs["search_vector"]
+        self.assertNotIsInstance(vector, str)
 
 
 class AutomaticDiscoveryTests(TestCase):

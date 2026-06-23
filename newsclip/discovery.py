@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 import socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
@@ -233,6 +234,7 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
 
     provider = BraveSearchProvider(
         api_key=api_key,
+        timeout=getattr(settings, "BRAVE_SEARCH_TIMEOUT_SECONDS", 10),
         count=getattr(settings, "BRAVE_SEARCH_RESULTS_PER_QUERY", 20),
         freshness=getattr(settings, "BRAVE_SEARCH_FRESHNESS", "pm"),
     )
@@ -245,16 +247,21 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
     sources_to_profile = []
     errors = []
 
-    for query in queries:
-        try:
-            results = provider.search(query)
-            stats["queries"] += 1
-        except requests.RequestException as exc:
-            errors.append(str(exc))
-            if log:
-                log(f"Brave falhou para '{query}': {exc}", level="WARNING", client=client)
-            continue
+    search_results = []
+    search_workers = max(1, min(getattr(settings, "BRAVE_SEARCH_WORKERS", 4), len(queries) or 1))
+    with ThreadPoolExecutor(max_workers=search_workers) as executor:
+        futures = {executor.submit(provider.search, query): query for query in queries}
+        for future in as_completed(futures):
+            query = futures[future]
+            try:
+                search_results.append((query, future.result()))
+                stats["queries"] += 1
+            except requests.RequestException as exc:
+                errors.append(str(exc))
+                if log:
+                    log(f"Brave falhou para '{query}': {exc}", level="WARNING", client=client)
 
+    for query, results in search_results:
         for result in results:
             stats["results"] += 1
             score = relevance_score(result.title, result.description, terms)
@@ -293,14 +300,19 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
                 stats["articles"] += int(saved is not None)
 
     profile_limit = getattr(settings, "DISCOVERY_PROFILE_NEW_SOURCES", 5)
-    for source in sources_to_profile[:profile_limit]:
-        try:
-            if profile_source(source):
-                stats["profiled"] += 1
-        except requests.RequestException as exc:
-            errors.append(str(exc))
-            if log:
-                log(f"Nao foi possivel perfilar {source.domain}: {exc}", level="WARNING", client=client, source=source)
+    sources_to_profile = sources_to_profile[:profile_limit]
+    profile_workers = max(1, min(3, len(sources_to_profile) or 1))
+    with ThreadPoolExecutor(max_workers=profile_workers) as executor:
+        futures = {executor.submit(profile_source, source): source for source in sources_to_profile}
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                if future.result():
+                    stats["profiled"] += 1
+            except requests.RequestException as exc:
+                errors.append(str(exc))
+                if log:
+                    log(f"Nao foi possivel perfilar {source.domain}: {exc}", level="WARNING", client=client, source=source)
 
     run.status = "PARTIAL" if errors and stats["queries"] else ("ERROR" if errors else "SUCCESS")
     run.queries_count = stats["queries"]
