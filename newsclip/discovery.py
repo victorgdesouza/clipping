@@ -19,7 +19,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from newsclip.models import Article, DiscoveryResult, DiscoveryRun, Source, SourceEndpoint
-from newsclip.utils import save_article
+from newsclip.utils import contains_excluded_term, save_article
 
 
 USER_AGENT = "ClippingDiscovery/1.0 (+monitoramento de imprensa)"
@@ -265,6 +265,8 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
         for result in results:
             stats["results"] += 1
             score = relevance_score(result.title, result.description, terms)
+            if contains_excluded_term(client, result.title, result.description):
+                score = 0
             relevant = score >= getattr(settings, "DISCOVERY_MIN_RELEVANCE_SCORE", 35)
             source = None
             source_created = False

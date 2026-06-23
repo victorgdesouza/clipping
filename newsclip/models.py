@@ -140,6 +140,11 @@ class FetchLog(models.Model):
 class Client(models.Model):
     name = models.CharField("Nome do cliente", max_length=500)
     keywords = models.TextField(help_text="Separe por virgulas")
+    excluded_keywords = models.TextField(
+        "Termos excluidos",
+        blank=True,
+        help_text="Separe por virgulas. Noticias que contenham estes termos nao serao salvas.",
+    )
     instagram = models.CharField("Instagram (@...)", max_length=100, blank=True)
     x = models.CharField("X/Twitter (@...)", max_length=100, blank=True)
     youtube = models.CharField("YouTube (canal/usuario)", max_length=200, blank=True)
@@ -171,6 +176,7 @@ class Article(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField("Atualizado em", auto_now=True, null=True, blank=True)
     search_vector = SearchVectorField(null=True, blank=True)
+    dedup_key = models.CharField(max_length=96, blank=True, db_index=True)
 
     class Meta:
         ordering = ['-published_at']
@@ -179,6 +185,7 @@ class Article(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(fields=['client', 'url'], name='unique_article_url_per_client'),
+            models.UniqueConstraint(fields=['client', 'dedup_key'], name='unique_article_dedup_per_client'),
         ]
         verbose_name = "Noticia"
         verbose_name_plural = "Noticias"
