@@ -175,7 +175,10 @@ class Command(BaseCommand):
                     elif source.source_type == 'SCRAPE':
                         futures_map[executor.submit(self.fetch_single_scrape, client, source, match_terms)] = f"Scrape: {source.name}"
 
-                active_endpoints = SourceEndpoint.objects.filter(is_active=True).select_related("source")
+                active_endpoints = SourceEndpoint.objects.filter(
+                    is_active=True,
+                    source__is_active=True,
+                ).select_related("source")
                 for endpoint in active_endpoints:
                     if endpoint.endpoint_type == "RSS":
                         futures_map[executor.submit(self.fetch_endpoint_rss, client, endpoint, match_terms, since_dt)] = f"RSS descoberto: {endpoint.source.name}"

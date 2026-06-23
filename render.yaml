@@ -9,7 +9,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
     preDeployCommand: python manage.py migrate --noinput
-    startCommand: gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 300
+    startCommand: bash start_render.sh
     healthCheckPath: /login/
     envVars:
       - key: PYTHON_VERSION
@@ -38,6 +38,12 @@ services:
         value: pt-br
       - key: TIME_ZONE
         value: America/Sao_Paulo
+      - key: Q_CLUSTER_WORKERS
+        value: "1"
+      - key: Q_CLUSTER_TIMEOUT
+        value: "1800"
+      - key: Q_CLUSTER_RETRY
+        value: "1860"
       - key: NEWSAPI_API_KEY
         sync: false
       - key: NEWSDATA_API_KEY
