@@ -16,19 +16,25 @@ Este projeto esta preparado para deploy no Render usando `render.yaml`.
 3. No Render, crie um Blueprint apontando para este repositorio.
 4. Durante a criacao, preencha as variaveis marcadas como `sync: false`.
 
-## Variaveis obrigatorias no Render
+## Variaveis no Render
 
-Estas devem ser preenchidas manualmente no painel do Render:
+Credenciais administrativas obrigatorias:
+
+- `DJANGO_SUPERUSER_USERNAME`
+- `DJANGO_SUPERUSER_EMAIL`
+- `DJANGO_SUPERUSER_PASSWORD`
+
+Provedores opcionais de noticias e descoberta:
 
 - `NEWSAPI_API_KEY`
 - `NEWSDATA_API_KEY`
 - `GOOGLE_API_KEY`
 - `GOOGLE_CSE_ID`
-- `DJANGO_SUPERUSER_USERNAME`
-- `DJANGO_SUPERUSER_EMAIL`
-- `DJANGO_SUPERUSER_PASSWORD`
+- `BRAVE_SEARCH_API_KEY`
 
-As chaves de APIs de noticias podem ficar vazias no primeiro deploy, mas a coleta ficara limitada.
+As chaves de APIs de noticias podem ficar vazias. Sem `BRAVE_SEARCH_API_KEY`,
+o motor continua usando Google News RSS e as fontes cadastradas, mas nao executa
+a descoberta ampla de novos dominios.
 
 ## Depois do primeiro deploy
 
@@ -48,6 +54,20 @@ O cron `clipping-app-fetch-news` roda:
 ```
 
 Isso significa: a cada 6 horas.
+
+A descoberta ampla do Brave roda no maximo uma vez a cada 24 horas por cliente,
+mesmo com o cron de seis horas. As demais rodadas continuam consultando RSS,
+sitemaps e fontes ja conhecidas. Use `--force-run` apenas para testes controlados
+que precisem ignorar esse intervalo.
+
+Quando o Brave encontra uma materia relevante, o sistema:
+
+1. salva a evidencia em `Discovery results`;
+2. registra o dominio como fonte candidata;
+3. procura RSS e sitemaps na pagina e no `robots.txt`;
+4. passa a consultar os endpoints encontrados nas coletas seguintes.
+
+O historico e o consumo logico de cada campanha ficam em `Discovery runs` no admin.
 
 Para mudar a frequencia, edite o campo `schedule` em `render.yaml`.
 

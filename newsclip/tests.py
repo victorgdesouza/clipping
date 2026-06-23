@@ -10,7 +10,14 @@ from unittest.mock import Mock, patch
 from feedparser import FeedParserDict
 
 from newsclip.management.commands.fetch_news import Command
-from newsclip.models import Article, Client, GeneratedReport, Source
+from newsclip.discovery import (
+    build_discovery_queries,
+    discover_client_sources,
+    fetch_sitemap_endpoint,
+    parse_sitemap,
+    profile_source,
+)
+from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, GeneratedReport, Source, SourceEndpoint
 from newsclip.templatetags.source_extras import domain
 from newsclip.utils import save_article
 from newsclip.views import check_task_status
@@ -76,6 +83,155 @@ class NewsCollectionRecallTests(TestCase):
         )
 
         self.assertEqual(get_mock.call_count, 2)
+
+
+class AutomaticDiscoveryTests(TestCase):
+    def setUp(self):
+        self.client_record = Client.objects.create(
+            name="Joao da Silva",
+            keywords="Joao Silva, mobilidade urbana",
+        )
+
+    def test_query_campaign_includes_client_and_keywords_without_duplicates(self):
+        queries = build_discovery_queries(
+            self.client_record,
+            ["Joao Silva", "mobilidade urbana"],
+            max_queries=20,
+        )
+
+        self.assertIn('"Joao da Silva"', queries)
+        self.assertIn('"Joao Silva" noticias', queries)
+        self.assertEqual(len(queries), len(set(queries)))
+
+    @override_settings(
+        BRAVE_SEARCH_API_KEY="test-key",
+        BRAVE_SEARCH_MAX_QUERIES=2,
+        BRAVE_SEARCH_RESULTS_PER_QUERY=20,
+        DISCOVERY_PROFILE_NEW_SOURCES=5,
+    )
+    @patch("newsclip.discovery.profile_source", return_value=0)
+    @patch("newsclip.discovery.requests.get")
+    def test_brave_registers_article_source_and_discovery_evidence(self, get_mock, _profile_mock):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "web": {
+                "results": [
+                    {
+                        "title": "Joao da Silva anuncia plano de mobilidade",
+                        "url": "https://jornal-local.example/noticia?utm_source=teste",
+                        "description": "Entrevista sobre mobilidade urbana.",
+                        "page_age": "2026-06-22T10:00:00Z",
+                    }
+                ]
+            }
+        }
+        get_mock.return_value = response
+
+        stats = discover_client_sources(
+            self.client_record,
+            ["Joao Silva", "mobilidade urbana"],
+        )
+
+        self.assertEqual(stats["new_sources"], 1)
+        self.assertEqual(stats["articles"], 1)
+        source = Source.objects.get(domain="jornal-local.example")
+        self.assertTrue(source.discovered_automatically)
+        self.assertEqual(source.status, "CANDIDATE")
+        self.assertTrue(DiscoveryResult.objects.filter(client=self.client_record, is_relevant=True).exists())
+        article = Article.objects.get(client=self.client_record)
+        self.assertNotIn("utm_source", article.url)
+        run = DiscoveryRun.objects.get(client=self.client_record, provider="BRAVE")
+        self.assertEqual(run.status, "SUCCESS")
+        requests_after_first_run = get_mock.call_count
+
+        second_stats = discover_client_sources(
+            self.client_record,
+            ["Joao Silva", "mobilidade urbana"],
+        )
+
+        self.assertEqual(second_stats["skipped"], 1)
+        self.assertEqual(get_mock.call_count, requests_after_first_run)
+
+    @patch("newsclip.discovery.is_public_http_url", return_value=True)
+    @patch("newsclip.discovery.requests.get")
+    def test_source_profiler_detects_rss_and_sitemap(self, get_mock, _public_mock):
+        source = Source.objects.create(
+            name="Jornal Automatico",
+            domain="jornal.example",
+            url="https://jornal.example/",
+            source_type="DISCOVERED",
+            status="CANDIDATE",
+            is_active=False,
+        )
+        homepage = Mock(
+            url="https://jornal.example/",
+            text='<html><head><link rel="alternate" type="application/rss+xml" href="/feed.xml"></head></html>',
+        )
+        homepage.raise_for_status.return_value = None
+        robots = Mock(ok=True, text="Sitemap: https://jornal.example/news-sitemap.xml")
+        get_mock.side_effect = [homepage, robots]
+
+        created = profile_source(source)
+
+        self.assertEqual(created, 2)
+        self.assertEqual(Source.objects.get(pk=source.pk).status, "VERIFIED")
+        self.assertSetEqual(
+            set(SourceEndpoint.objects.filter(source=source).values_list("endpoint_type", flat=True)),
+            {"RSS", "NEWS_SITEMAP"},
+        )
+
+    def test_news_sitemap_parser_extracts_title_and_date(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+          <url><loc>https://jornal.example/materia</loc><news:news>
+            <news:publication_date>2026-06-22T10:00:00Z</news:publication_date>
+            <news:title>Joao Silva participa de evento</news:title>
+          </news:news></url>
+        </urlset>"""
+
+        children, articles = parse_sitemap(xml)
+
+        self.assertEqual(children, [])
+        self.assertEqual(articles[0]["title"], "Joao Silva participa de evento")
+        self.assertEqual(articles[0]["publication_date"], "2026-06-22T10:00:00Z")
+
+    @override_settings(DISCOVERY_MIN_RELEVANCE_SCORE=35, SITEMAP_MAX_ARTICLES=10)
+    @patch("newsclip.discovery.is_public_http_url", return_value=True)
+    @patch("newsclip.discovery.requests.get")
+    def test_news_sitemap_saves_relevant_article(self, get_mock, _public_mock):
+        source = Source.objects.create(
+            name="Jornal de Teste",
+            domain="jornal.example",
+            url="https://jornal.example/",
+            source_type="NEWS_SITEMAP",
+        )
+        endpoint = SourceEndpoint.objects.create(
+            source=source,
+            endpoint_type="NEWS_SITEMAP",
+            url="https://jornal.example/news-sitemap.xml",
+        )
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.text = """<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+          xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"><url>
+          <loc>https://jornal.example/materia</loc><news:news>
+          <news:publication_date>2026-06-22T10:00:00Z</news:publication_date>
+          <news:title>Joao Silva apresenta novo projeto</news:title>
+          </news:news></url></urlset>"""
+        get_mock.return_value = response
+
+        saved = fetch_sitemap_endpoint(
+            Command(),
+            self.client_record,
+            endpoint,
+            ["Joao Silva"],
+            timezone.now() - timedelta(days=90),
+        )
+
+        self.assertEqual(saved, 1)
+        self.assertTrue(Article.objects.filter(client=self.client_record, source="Jornal de Teste").exists())
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)

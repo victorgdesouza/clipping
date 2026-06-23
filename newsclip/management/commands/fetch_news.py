@@ -20,7 +20,8 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone as dj_timezone
 from django.db import IntegrityError
 
-from newsclip.models import Client, Article, Source, FetchLog
+from newsclip.discovery import discover_client_sources, fetch_sitemap_endpoint
+from newsclip.models import Client, Article, Source, SourceEndpoint, FetchLog
 from newsclip.utils import save_article
 
 from newsapi import NewsApiClient # type: ignore
@@ -134,6 +135,21 @@ class Command(BaseCommand):
             if not kws:
                 self.log(f"Cliente {client.name}: sem keywords definidas. Pulando.", level='WARNING', client=client)
                 continue
+
+            match_terms = list(dict.fromkeys([client.name, *kws]))
+
+            discovery_stats = discover_client_sources(client, kws, log=self.log, force=force_run)
+            if discovery_stats["queries"]:
+                self.log(
+                    "Descoberta Brave: "
+                    f"{discovery_stats['queries']} consultas, "
+                    f"{discovery_stats['results']} resultados, "
+                    f"{discovery_stats['relevant']} relevantes, "
+                    f"{discovery_stats['new_sources']} novas fontes e "
+                    f"{discovery_stats['articles']} noticias novas.",
+                    level='SUCCESS',
+                    client=client,
+                )
             
             futures_map = {}
             with ThreadPoolExecutor(max_workers=5) as executor:
@@ -155,11 +171,18 @@ class Command(BaseCommand):
                 active_sources = Source.objects.filter(is_active=True)
                 for source in active_sources:
                     if source.source_type == 'RSS':
-                        futures_map[executor.submit(self.fetch_single_rss, client, source, kws, since_dt)] = f"RSS: {source.name}"
+                        futures_map[executor.submit(self.fetch_single_rss, client, source, match_terms, since_dt)] = f"RSS: {source.name}"
                     elif source.source_type == 'SCRAPE':
-                        futures_map[executor.submit(self.fetch_single_scrape, client, source, kws)] = f"Scrape: {source.name}"
+                        futures_map[executor.submit(self.fetch_single_scrape, client, source, match_terms)] = f"Scrape: {source.name}"
+
+                active_endpoints = SourceEndpoint.objects.filter(is_active=True).select_related("source")
+                for endpoint in active_endpoints:
+                    if endpoint.endpoint_type == "RSS":
+                        futures_map[executor.submit(self.fetch_endpoint_rss, client, endpoint, match_terms, since_dt)] = f"RSS descoberto: {endpoint.source.name}"
+                    elif endpoint.endpoint_type in {"SITEMAP", "NEWS_SITEMAP"}:
+                        futures_map[executor.submit(fetch_sitemap_endpoint, self, client, endpoint, match_terms, since_dt)] = f"Sitemap: {endpoint.source.name}"
                 
-                client_total_saved = 0
+                client_total_saved = discovery_stats["articles"]
                 for future in as_completed(futures_map):
                     source_name = futures_map[future]
                     try:
@@ -283,9 +306,27 @@ class Command(BaseCommand):
         return count_saved
 
     def fetch_single_rss(self, client, source_obj, keywords_list, since_date_aware):
+        return self._fetch_rss_url(client, source_obj, source_obj.url, keywords_list, since_date_aware)
+
+    def fetch_endpoint_rss(self, client, endpoint, keywords_list, since_date_aware):
+        try:
+            count = self._fetch_rss_url(
+                client, endpoint.source, endpoint.url, keywords_list, since_date_aware
+            )
+            endpoint.last_success_at = dj_timezone.now()
+            endpoint.consecutive_errors = 0
+            endpoint.save(update_fields=["last_success_at", "consecutive_errors"])
+            return count
+        except Exception:
+            endpoint.last_error_at = dj_timezone.now()
+            endpoint.consecutive_errors += 1
+            endpoint.save(update_fields=["last_error_at", "consecutive_errors"])
+            raise
+
+    def _fetch_rss_url(self, client, source_obj, feed_url, keywords_list, since_date_aware):
         count_saved = 0
         try:
-            feed = feedparser.parse(source_obj.url)
+            feed = feedparser.parse(feed_url)
             for entry in feed.entries:
                 url = entry.get('link')
                 title = entry.get('title')
