@@ -37,6 +37,35 @@
   document.addEventListener('DOMContentLoaded', function () {
     const btnFetch = document.getElementById('btn-fetch-news');
     const overlay = document.getElementById('loading-overlay');
+    let pollTimer = null;
+
+    function finishFetch(message, isError = false) {
+      if (pollTimer) clearTimeout(pollTimer);
+      overlay.style.display = 'none';
+      btnFetch.disabled = false;
+      alert((isError ? 'Erro: ' : '') + message);
+      if (!isError) window.location.reload();
+    }
+
+    function pollFetch(statusUrl) {
+      fetch(statusUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(response => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then(data => {
+          if (data.status === 'DONE') {
+            finishFetch(data.result || (data.success ? 'Busca finalizada.' : 'A busca falhou.'), !data.success);
+            return;
+          }
+          pollTimer = setTimeout(() => pollFetch(statusUrl), 3000);
+        })
+        .catch(err => {
+          console.error('Status error:', err);
+          finishFetch('Nao foi possivel acompanhar a busca. Ela pode continuar em segundo plano.', true);
+        });
+    }
+
     if (btnFetch) {
       btnFetch.addEventListener('click', e => {
         e.preventDefault();
@@ -53,11 +82,12 @@
           .then(data => {
             overlay.style.display = 'none';
             btnFetch.disabled = false;
-            if (data.status === 'ok') {
-              alert(data.message);
-              window.location.reload();
+            if (data.status === 'queued') {
+              overlay.style.display = 'flex';
+              btnFetch.disabled = true;
+              pollFetch(data.status_url);
             } else {
-              alert('Erro: ' + data.message);
+              finishFetch(data.message || 'Nao foi possivel iniciar a busca.', true);
             }
           })
           .catch(err => {

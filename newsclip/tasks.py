@@ -17,8 +17,8 @@ def fetch_news_task(client_id):
         call_command("fetch_news", "--client-id", str(client_id))
         
         logger.info(f"Successfully completed fetch_news_task for client_id={client_id}")
-        return f"Success: News fetched for client {client_id}"
+        return f"Busca concluida para o cliente {client_id}."
         
     except Exception as e:
-        logger.error(f"Error in fetch_news_task for client_id={client_id}: {e}")
-        return f"Error: {e}"
+        logger.exception(f"Error in fetch_news_task for client_id={client_id}: {e}")
+        raise

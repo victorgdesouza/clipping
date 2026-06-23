@@ -276,6 +276,24 @@ class ClientAccessTests(TestCase):
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]))
         self.assertEqual(response.status_code, 403)
 
+    @patch("newsclip.views.async_task", return_value="task-123")
+    def test_owner_starts_fetch_in_background(self, async_task_mock):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("fetch_news", args=[self.client_record.pk]),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["status"], "queued")
+        self.assertIn("task-123", response.json()["status_url"])
+        async_task_mock.assert_called_once_with(
+            "newsclip.tasks.fetch_news_task",
+            self.client_record.pk,
+            task_name=f"fetch-news-client-{self.client_record.pk}",
+        )
+
 
 class ReportGenerationTests(TestCase):
     def setUp(self):
