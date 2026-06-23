@@ -32,6 +32,13 @@
     </div>
 
     <div class="form-group form-group-wide">
+      <label for="{{ form.excluded_keywords.id_for_label }}">Termos excluidos</label>
+      {{ form.excluded_keywords }}
+      <span class="form-help-text">{{ form.excluded_keywords.help_text }}</span>
+      {{ form.excluded_keywords.errors }}
+    </div>
+
+    <div class="form-group form-group-wide">
       <label for="{{ form.domains.id_for_label }}">Dominios confiaveis</label>
       {{ form.domains }}
       <span class="form-help-text">{{ form.domains.help_text }}</span>
