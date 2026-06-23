@@ -24,13 +24,20 @@ class ReportForm(forms.Form):
 class ClientForm(forms.ModelForm):
     class Meta:
         model = Client
-        fields = ["name", "keywords", "domains", "instagram", "x", "youtube"]
+        fields = ["name", "keywords", "excluded_keywords", "domains", "instagram", "x", "youtube"]
         widgets = {
             "keywords": forms.Textarea(
                 attrs={
                     "rows": 2,
                     "class": "auto-expand",
                     "placeholder": "Ex: termo1, termo2...",
+                }
+            ),
+            "excluded_keywords": forms.Textarea(
+                attrs={
+                    "rows": 2,
+                    "class": "auto-expand",
+                    "placeholder": "Ex: Rio Preto da Eva, termo indesejado...",
                 }
             ),
             "domains": forms.Textarea(
@@ -46,6 +53,7 @@ class ClientForm(forms.ModelForm):
         }
         help_texts = {
             "keywords": "Separe os termos por virgula.",
+            "excluded_keywords": "Separe por virgula os termos que tornam uma noticia irrelevante.",
             "domains": "Separe os dominios por virgula.",
             "instagram": "Opcional. Use o perfil publico do cliente.",
             "x": "Opcional. Use o perfil publico do cliente.",

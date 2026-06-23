@@ -2,10 +2,13 @@
 
 import re
 import hashlib
+import unicodedata
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pathlib import Path
 from collections import Counter
 from django.conf import settings
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone as dj_timezone
 # from googlesearch import search  # Temporarily disabled - requires distutils (removed in Python 3.14)
 from dateutil import parser as date_parser
@@ -133,6 +136,65 @@ class SimpleTopicClassifier:
 _topic_clf = SimpleTopicClassifier()
 
 
+TRACKING_QUERY_KEYS = {
+    "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source",
+    "utm_campaign", "utm_content", "utm_medium", "utm_source", "utm_term",
+}
+
+
+def normalize_match_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    without_accents = "".join(char for char in normalized if not unicodedata.combining(char))
+    return re.sub(r"\s+", " ", without_accents.casefold()).strip()
+
+
+def canonicalize_article_url(value: str) -> str:
+    parts = urlsplit((value or "").strip())
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        return (value or "").strip()
+    host = parts.hostname.casefold()
+    port = f":{parts.port}" if parts.port and parts.port not in {80, 443} else ""
+    path = re.sub(r"/{2,}", "/", parts.path or "/")
+    if path != "/":
+        path = path.rstrip("/")
+    query = urlencode(
+        sorted(
+            (key, val)
+            for key, val in parse_qsl(parts.query, keep_blank_values=True)
+            if key.casefold() not in TRACKING_QUERY_KEYS
+        )
+    )
+    return urlunsplit((parts.scheme.casefold(), f"{host}{port}", path, query, ""))
+
+
+def article_dedup_key(title: str, source: str) -> str:
+    normalized_source = normalize_match_text(source)
+    normalized_title = normalize_match_text(title)
+    # Google News costuma anexar " - Fonte" ao titulo. A fonte ja faz parte
+    # da chave, portanto o sufixo deve ser removido antes do fingerprint.
+    for separator in (" - ", " | ", " — ", " – "):
+        suffix = f"{separator}{normalized_source}"
+        if normalized_source and normalized_title.endswith(suffix):
+            normalized_title = normalized_title[: -len(suffix)].strip()
+            break
+    normalized_title = re.sub(r"[^a-z0-9]+", " ", normalized_title).strip()
+    payload = f"{normalized_source}|{normalized_title}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def client_excluded_terms(client) -> list[str]:
+    return [
+        term.strip()
+        for term in (getattr(client, "excluded_keywords", "") or "").split(",")
+        if term.strip()
+    ]
+
+
+def contains_excluded_term(client, *values: str) -> bool:
+    searchable = normalize_match_text(" ".join(value or "" for value in values))
+    return any(normalize_match_text(term) in searchable for term in client_excluded_terms(client))
+
+
 # —————————————————————————————————————————
 # 4) Salvamento de artigos no banco
 # —————————————————————————————————————————
@@ -154,26 +216,35 @@ def save_article(client, title, url, raw_date, source, content_text=None):
 
     processed_title = (title or "")[:Article._meta.get_field('title').max_length]
     processed_source = (source or "")[:Article._meta.get_field('source').max_length]
+    processed_url = canonicalize_article_url(url)
+
+    if contains_excluded_term(client, processed_title, content_text or ""):
+        return None
+
+    dedup_key = article_dedup_key(processed_title, processed_source)
     
     summary_text = generate_summary(content_text if content_text else processed_title)
     topic_classification = _topic_clf.classify(processed_title) # _topic_clf deve estar definido neste arquivo
 
     article_instance = None
     try:
-        article_instance, created = Article.objects.get_or_create(
-            client=client,
-            url=url,
-            defaults={
-                "title": processed_title,
-                "published_at": dt,
-                "source": processed_source,
-                "summary": summary_text,
-                "topic": topic_classification,
-                "content": content_text if content_text else "",
-            },
-        )
-        if not created:
+        if Article.objects.filter(client=client).filter(
+            Q(url=processed_url) | Q(dedup_key=dedup_key)
+        ).exists():
             return None
+
+        with transaction.atomic():
+            article_instance = Article.objects.create(
+                client=client,
+                url=processed_url,
+                title=processed_title,
+                published_at=dt,
+                source=processed_source,
+                summary=summary_text,
+                topic=topic_classification,
+                content=content_text if content_text else "",
+                dedup_key=dedup_key,
+            )
         # print(f"Artigo CRIADO: {article_instance.title_truncado}") # title_truncado é uma property no modelo Article
 
         if connection.vendor == "postgresql":

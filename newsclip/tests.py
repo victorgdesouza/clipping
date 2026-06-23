@@ -48,6 +48,48 @@ class NewsCollectionRecallTests(TestCase):
         self.assertIsNotNone(second_client)
         self.assertEqual(Article.objects.filter(url=url).count(), 2)
 
+    def test_same_story_from_same_source_is_saved_only_once(self):
+        first = save_article(
+            self.client_a,
+            "Prefeitura anuncia novo projeto - Jornal Exemplo",
+            "https://jornal.example/materia?utm_source=google",
+            None,
+            "Jornal Exemplo",
+        )
+        repeated = save_article(
+            self.client_a,
+            "Prefeitura anuncia novo projeto",
+            "https://jornal.example/materia?ref=homepage",
+            None,
+            "Jornal Exemplo",
+        )
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(repeated)
+        self.assertEqual(Article.objects.filter(client=self.client_a).count(), 1)
+        self.assertEqual(Article.objects.get(client=self.client_a).url, "https://jornal.example/materia")
+
+    def test_same_title_from_different_sources_is_preserved(self):
+        save_article(self.client_a, "Noticia importante", "https://a.example/1", None, "Fonte A")
+        save_article(self.client_a, "Noticia importante", "https://b.example/2", None, "Fonte B")
+
+        self.assertEqual(Article.objects.filter(client=self.client_a).count(), 2)
+
+    def test_excluded_term_blocks_ambiguous_city(self):
+        self.client_a.excluded_keywords = "Rio Preto da Eva"
+        self.client_a.save(update_fields=["excluded_keywords"])
+
+        saved = save_article(
+            self.client_a,
+            "Obras avancam em Rio Preto da Eva",
+            "https://example.com/rio-preto-da-eva",
+            None,
+            "Jornal Exemplo",
+        )
+
+        self.assertIsNone(saved)
+        self.assertFalse(Article.objects.filter(client=self.client_a).exists())
+
     @patch("newsclip.management.commands.fetch_news.feedparser.parse")
     def test_rss_matches_accent_insensitive_keyword_in_summary(self, parse_mock):
         source = Source.objects.create(
@@ -167,6 +209,38 @@ class AutomaticDiscoveryTests(TestCase):
 
         self.assertEqual(second_stats["skipped"], 1)
         self.assertEqual(get_mock.call_count, requests_after_first_run)
+
+    @override_settings(
+        BRAVE_SEARCH_API_KEY="test-key",
+        BRAVE_SEARCH_MAX_QUERIES=1,
+        DISCOVERY_PROFILE_NEW_SOURCES=0,
+    )
+    @patch("newsclip.discovery.requests.get")
+    def test_brave_rejects_result_with_excluded_term(self, get_mock):
+        self.client_record.excluded_keywords = "Rio Preto da Eva"
+        self.client_record.save(update_fields=["excluded_keywords"])
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "web": {
+                "results": [
+                    {
+                        "title": "Evento realizado em Rio Preto da Eva",
+                        "url": "https://amazonas.example/evento",
+                        "description": "Agenda municipal",
+                    }
+                ]
+            }
+        }
+        get_mock.return_value = response
+
+        stats = discover_client_sources(self.client_record, ["Rio Preto"])
+
+        self.assertEqual(stats["relevant"], 0)
+        self.assertEqual(stats["articles"], 0)
+        self.assertFalse(Article.objects.filter(client=self.client_record).exists())
+        result = DiscoveryResult.objects.get(client=self.client_record)
+        self.assertFalse(result.is_relevant)
 
     @patch("newsclip.discovery.is_public_http_url", return_value=True)
     @patch("newsclip.discovery.requests.get")
