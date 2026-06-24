@@ -212,6 +212,7 @@
         <th>Titulo</th>
         <th>Data</th>
         <th>Fonte</th>
+        <th>Qualidade</th>
       </tr>
     </thead>
     <tbody>
@@ -221,10 +222,11 @@
         <td><a href="{{ art.url }}" target="_blank">{{ art.title }}</a></td>
         <td>{{ art.published_at|date:"d/m/Y H:i" }}</td>
         <td>{{ art.source|domain }}</td>
+        <td><span class="quality-badge quality-{{ art.validation_status|lower }}">{{ art.get_validation_status_display }} · {{ art.relevance_score }}</span></td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="4" class="empty-message">Nenhum artigo encontrado.</td>
+        <td colspan="5" class="empty-message">Nenhum artigo encontrado.</td>
       </tr>
       {% endfor %}
     </tbody>

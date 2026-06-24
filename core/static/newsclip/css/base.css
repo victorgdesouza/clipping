@@ -86,6 +86,22 @@ p { color: var(--muted); }
 .client-name { display: inline-flex; width: fit-content; max-width: 100%; padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); font-weight: 750; }
 .client-card__title { margin: 0.9rem 0 0.35rem; font-size: 1.18rem; font-weight: 750; }
 .client-card__meta { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.92rem; }
+.coverage-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.coverage-summary div { padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.coverage-summary span { display: block; color: var(--muted); font-size: .82rem; font-weight: 700; text-transform: uppercase; }
+.coverage-summary strong { display: block; margin-top: .25rem; color: var(--text); font-size: 1.65rem; }
+.coverage-heading { display: flex; align-items: center; justify-content: space-between; margin-top: .65rem; color: var(--muted-strong); font-size: .86rem; font-weight: 700; }
+.coverage-bar { height: 8px; margin: .45rem 0 .75rem; overflow: hidden; border-radius: 999px; background: #e5e7eb; }
+.coverage-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand), #22c55e); }
+.coverage-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; margin-bottom: .7rem; }
+.coverage-metrics span { color: var(--muted); font-size: .75rem; }
+.coverage-metrics strong { display: block; color: var(--text); font-size: .95rem; }
+.provider-list { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .8rem; }
+.provider-list span, .quality-badge { display: inline-flex; padding: .18rem .45rem; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: .72rem; font-weight: 750; }
+.coverage-review { margin: 0 0 .75rem; color: #92400e; font-size: .8rem; }
+.quality-accepted { background: #dcfce7; color: #166534; }
+.quality-review { background: #fef3c7; color: #92400e; }
+.quality-rejected { background: #fee2e2; color: #991b1b; }
 .card-actions { justify-content: space-between; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border); }
 .action-link { color: var(--muted-strong); font-size: 0.92rem; font-weight: 700; }
 .action-link:hover { color: var(--brand-dark); }
@@ -189,4 +205,4 @@ canvas { max-width: 100%; }
 .landing-cta { margin-bottom: 1rem; padding: 2rem; border: 1px solid var(--border); border-radius: 8px; background: var(--text); color: #fff; }
 .landing-cta h2, .landing-cta p { color: #fff; }
 .landing-cta p { max-width: 680px; color: rgba(255,255,255,.74); }
-@media (max-width: 760px) { .app-header__inner, .page-header, .dashboard-header, .card-heading { align-items: stretch; flex-direction: column; } .top-nav { justify-content: space-between; flex-wrap: wrap; } .app-main { padding: 1.25rem .9rem 2rem; } .filter-form, .form-actions, .card-actions, .report-list__item { align-items: stretch; flex-direction: column; } .filter-group, .button, button { width: 100%; } .form-grid, .two-column-layout, .benefit-grid, .steps-list, .outcome-grid { grid-template-columns: 1fr; } .landing-hero { min-height: auto; margin-top: -1.25rem; padding-top: 3.5rem; padding-bottom: 16rem; } .landing-hero__copy h1 { font-size: clamp(2rem, 10vw, 3.2rem); } .landing-hero__media { right: .9rem; bottom: 1rem; left: .9rem; width: auto; } .product-shot__side { display: none; } .product-shot__body { grid-template-columns: 1fr; min-height: 210px; } table { display: block; overflow-x: auto; white-space: nowrap; } }
+@media (max-width: 760px) { .app-header__inner, .page-header, .dashboard-header, .card-heading { align-items: stretch; flex-direction: column; } .top-nav { justify-content: space-between; flex-wrap: wrap; } .app-main { padding: 1.25rem .9rem 2rem; } .filter-form, .form-actions, .card-actions, .report-list__item { align-items: stretch; flex-direction: column; } .filter-group, .button, button { width: 100%; } .form-grid, .two-column-layout, .benefit-grid, .steps-list, .outcome-grid, .coverage-summary { grid-template-columns: 1fr; } .landing-hero { min-height: auto; margin-top: -1.25rem; padding-top: 3.5rem; padding-bottom: 16rem; } .landing-hero__copy h1 { font-size: clamp(2rem, 10vw, 3.2rem); } .landing-hero__media { right: .9rem; bottom: 1rem; left: .9rem; width: auto; } .product-shot__side { display: none; } .product-shot__body { grid-template-columns: 1fr; min-height: 210px; } table { display: block; overflow-x: auto; white-space: nowrap; } }

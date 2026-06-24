@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth import login
@@ -14,12 +15,13 @@ from django.db.models.functions import TruncDate
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 from django_q.tasks import async_task
 
 from .forms import ClientForm, ReportForm
-from .models import Article, Client, GeneratedReport
+from .models import Article, Client, DiscoveryRun, GeneratedReport
 
 
 def user_can_access_client(user, client):
@@ -158,7 +160,56 @@ def noticias_cliente_json(request, pk):
 
 @login_required
 def dashboard(request):
-    return render(request, "newsclip/dashboard.html", {"clients": clients_for_user(request.user)})
+    clients = list(clients_for_user(request.user).order_by("name"))
+    since = timezone.now() - timedelta(days=30)
+    total_articles = 0
+    total_sources = set()
+    active_providers = set()
+
+    for client in clients:
+        articles = Article.objects.filter(client=client, excluded=False)
+        metrics = articles.aggregate(
+            total=Count("id"),
+            recent=Count("id", filter=Q(published_at__gte=since) | Q(created_at__gte=since)),
+            sources=Count("source", distinct=True),
+            providers=Count("provider", distinct=True),
+            accepted=Count("id", filter=Q(validation_status="ACCEPTED")),
+            review=Count("id", filter=Q(validation_status="REVIEW")),
+        )
+        providers = sorted(set(articles.exclude(provider="").values_list("provider", flat=True)))
+        latest_run = DiscoveryRun.objects.filter(client=client).order_by("-started_at").first()
+        accepted_rate = round((metrics["accepted"] / metrics["total"] * 100), 0) if metrics["total"] else 0
+        coverage_score = min(
+            100,
+            min(metrics["recent"], 20) * 2
+            + min(metrics["sources"], 5) * 8
+            + min(metrics["providers"], 6) * 5
+            + round(accepted_rate * 0.2),
+        )
+        client.coverage = {
+            **metrics,
+            "accepted_rate": int(accepted_rate),
+            "score": int(coverage_score),
+            "providers_list": providers,
+            "latest_run": latest_run,
+        }
+        total_articles += metrics["total"]
+        total_sources.update(articles.exclude(source="").values_list("source", flat=True))
+        active_providers.update(providers)
+
+    return render(
+        request,
+        "newsclip/dashboard.html",
+        {
+            "clients": clients,
+            "coverage_summary": {
+                "articles": total_articles,
+                "sources": len(total_sources),
+                "providers": len(active_providers),
+                "clients": len(clients),
+            },
+        },
+    )
 
 
 @login_required

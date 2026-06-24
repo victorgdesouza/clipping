@@ -18,9 +18,10 @@ from newsclip.discovery import (
     profile_source,
 )
 from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, GeneratedReport, Source, SourceEndpoint
+from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.signals import update_search_vector
 from newsclip.templatetags.source_extras import domain
-from newsclip.utils import save_article
+from newsclip.utils import save_article, validate_article_candidate
 from newsclip.views import check_task_status
 
 
@@ -140,6 +141,123 @@ class SearchVectorSignalTests(TestCase):
         filter_mock.assert_called_once_with(pk=123)
         vector = filter_mock.return_value.update.call_args.kwargs["search_vector"]
         self.assertNotIsInstance(vector, str)
+
+
+class AdvancedValidationTests(TestCase):
+    def setUp(self):
+        self.client_record = Client.objects.create(
+            name="Sao Jose do Rio Preto",
+            keywords="Rio Preto, mobilidade urbana",
+            excluded_keywords="Rio Preto da Eva",
+        )
+
+    def test_title_match_is_accepted_with_high_score(self):
+        result = validate_article_candidate(
+            self.client_record,
+            "Rio Preto anuncia plano de mobilidade urbana",
+            "Novo projeto municipal",
+            "https://jornal.example/materia",
+            "Jornal Local",
+        )
+
+        self.assertEqual(result["status"], "ACCEPTED")
+        self.assertGreaterEqual(result["score"], 70)
+
+    def test_ambiguous_excluded_location_is_rejected(self):
+        result = validate_article_candidate(
+            self.client_record,
+            "Evento em Rio Preto da Eva",
+            "Agenda do Amazonas",
+            "https://amazonas.example/evento",
+            "Fonte Amazonas",
+        )
+
+        self.assertEqual(result["status"], "REJECTED")
+
+
+class AdditionalProvidersTests(TestCase):
+    def setUp(self):
+        self.client_record = Client.objects.create(name="Cliente Regional", keywords="mobilidade")
+        self.since = timezone.now() - timedelta(days=30)
+
+    @override_settings(YOUTUBE_API_KEY="youtube-test", YOUTUBE_MAX_QUERIES=1)
+    @patch("newsclip.providers.requests.get")
+    def test_youtube_search_saves_video_with_provider(self, get_mock):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "items": [{
+                "id": {"videoId": "video123"},
+                "snippet": {
+                    "title": "Cliente Regional debate mobilidade",
+                    "description": "Entrevista local",
+                    "channelTitle": "TV Local",
+                    "publishedAt": "2026-06-23T10:00:00Z",
+                },
+            }]
+        }
+        get_mock.return_value = response
+
+        saved = fetch_youtube(self.client_record, ["mobilidade"], self.since)
+
+        self.assertEqual(saved, 1)
+        article = Article.objects.get(client=self.client_record)
+        self.assertEqual(article.provider, "YOUTUBE")
+        self.assertEqual(article.validation_status, "ACCEPTED")
+        self.assertEqual(DiscoveryRun.objects.get(provider="YOUTUBE").status, "SUCCESS")
+
+    @override_settings(YOUTUBE_API_KEY="youtube-test", YOUTUBE_MAX_QUERIES=1)
+    @patch("newsclip.providers.feedparser.parse")
+    @patch("newsclip.providers.requests.get")
+    def test_channel_feed_does_not_disable_broad_youtube_search(self, get_mock, parse_mock):
+        self.client_record.youtube = "https://youtube.com/channel/UC1234567890123456789012"
+        self.client_record.save(update_fields=["youtube"])
+        feed_response = Mock(content=b"")
+        feed_response.raise_for_status.return_value = None
+        search_response = Mock()
+        search_response.raise_for_status.return_value = None
+        search_response.json.return_value = {
+            "items": [{
+                "id": {"videoId": "broad456"},
+                "snippet": {
+                    "title": "Cliente Regional em reportagem ampla",
+                    "description": "mobilidade",
+                    "channelTitle": "Canal Nao Cadastrado",
+                    "publishedAt": "2026-06-23T10:00:00Z",
+                },
+            }]
+        }
+        get_mock.side_effect = [feed_response, search_response]
+        parse_mock.return_value = FeedParserDict(entries=[])
+
+        saved = fetch_youtube(self.client_record, ["mobilidade"], self.since)
+
+        self.assertEqual(saved, 1)
+        self.assertEqual(get_mock.call_count, 2)
+        self.assertIn("search", get_mock.call_args_list[1].args[0])
+
+    @override_settings(GDELT_MAX_QUERIES=1, GDELT_MAX_RECORDS=10)
+    @patch("newsclip.providers.requests.get")
+    def test_gdelt_saves_article_and_run_metrics(self, get_mock):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "articles": [{
+                "title": "Cliente Regional apresenta plano de mobilidade",
+                "url": "https://jornal.example/plano",
+                "domain": "jornal.example",
+                "seendate": "20260623T120000Z",
+            }]
+        }
+        get_mock.return_value = response
+
+        saved = fetch_gdelt(self.client_record, ["mobilidade"], self.since)
+
+        self.assertEqual(saved, 1)
+        self.assertEqual(Article.objects.get(client=self.client_record).provider, "GDELT")
+        run = DiscoveryRun.objects.get(provider="GDELT")
+        self.assertEqual(run.results_count, 1)
+        self.assertEqual(run.articles_count, 1)
 
 
 class AutomaticDiscoveryTests(TestCase):
@@ -349,6 +467,26 @@ class ClientAccessTests(TestCase):
         self.client.force_login(self.other_user)
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]))
         self.assertEqual(response.status_code, 403)
+
+    def test_dashboard_exposes_visual_coverage_metrics(self):
+        save_article(
+            self.client_record,
+            "Cliente Teste aparece em noticia local",
+            "https://jornal.example/noticia",
+            timezone.now().isoformat(),
+            "Jornal Local",
+            "Conteudo sobre o cliente teste",
+            provider="GDELT",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        client = response.context["clients"][0]
+        self.assertEqual(client.coverage["total"], 1)
+        self.assertIn("GDELT", client.coverage["providers_list"])
+        self.assertContains(response, "Cobertura")
 
     @patch("newsclip.views.async_task", return_value="task-123")
     def test_owner_starts_fetch_in_background(self, async_task_mock):

@@ -1,10 +1,6 @@
-databases:
-  - name: clipping-app-db
-    plan: basic-256mb
-
 services:
   - type: web
-    name: clipping-app-web
+    name: clipping
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
@@ -15,7 +11,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.11
       - key: SECRET_KEY
-        generateValue: true
+        sync: false
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
@@ -23,9 +19,7 @@ services:
       - key: CSRF_TRUSTED_ORIGINS
         value: "https://*.onrender.com"
       - key: DATABASE_URL
-        fromDatabase:
-          name: clipping-app-db
-          property: connectionString
+        sync: false
       - key: DATABASE_SSL_REQUIRE
         value: "True"
       - key: SECURE_SSL_REDIRECT
@@ -52,6 +46,18 @@ services:
         sync: false
       - key: GOOGLE_CSE_ID
         sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: YOUTUBE_MAX_QUERIES
+        value: "2"
+      - key: GDELT_ENABLED
+        value: "true"
+      - key: GDELT_MAX_QUERIES
+        value: "3"
+      - key: GDELT_MAX_RECORDS
+        value: "75"
+      - key: GDELT_MIN_INTERVAL_SECONDS
+        value: "6"
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: BRAVE_SEARCH_MAX_QUERIES
@@ -66,100 +72,3 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: DJANGO_SUPERUSER_USERNAME
-        sync: false
-      - key: DJANGO_SUPERUSER_EMAIL
-        sync: false
-      - key: DJANGO_SUPERUSER_PASSWORD
-        sync: false
-
-  - type: worker
-    name: clipping-app-worker
-    runtime: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py qcluster
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.11
-      - key: SECRET_KEY
-        fromService:
-          type: web
-          name: clipping-app-web
-          envVarKey: SECRET_KEY
-      - key: DEBUG
-        value: "False"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: clipping-app-db
-          property: connectionString
-      - key: DATABASE_SSL_REQUIRE
-        value: "True"
-      - key: LANGUAGE_CODE
-        value: pt-br
-      - key: TIME_ZONE
-        value: America/Sao_Paulo
-      - key: NEWSAPI_API_KEY
-        sync: false
-      - key: NEWSDATA_API_KEY
-        sync: false
-      - key: GOOGLE_API_KEY
-        sync: false
-      - key: GOOGLE_CSE_ID
-        sync: false
-      - key: BRAVE_SEARCH_API_KEY
-        sync: false
-      - key: BRAVE_SEARCH_MAX_QUERIES
-        value: "12"
-      - key: BRAVE_SEARCH_RESULTS_PER_QUERY
-        value: "20"
-      - key: DISCOVERY_PROFILE_NEW_SOURCES
-        value: "5"
-      - key: DISCOVERY_MIN_INTERVAL_HOURS
-        value: "24"
-
-  - type: cron
-    name: clipping-app-fetch-news
-    runtime: python
-    plan: starter
-    schedule: "0 */6 * * *"
-    buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py fetch_news
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.11
-      - key: SECRET_KEY
-        fromService:
-          type: web
-          name: clipping-app-web
-          envVarKey: SECRET_KEY
-      - key: DEBUG
-        value: "False"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: clipping-app-db
-          property: connectionString
-      - key: DATABASE_SSL_REQUIRE
-        value: "True"
-      - key: LANGUAGE_CODE
-        value: pt-br
-      - key: TIME_ZONE
-        value: America/Sao_Paulo
-      - key: NEWSAPI_API_KEY
-        sync: false
-      - key: NEWSDATA_API_KEY
-        sync: false
-      - key: GOOGLE_API_KEY
-        sync: false
-      - key: GOOGLE_CSE_ID
-        sync: false
-      - key: BRAVE_SEARCH_API_KEY
-        sync: false
-      - key: BRAVE_SEARCH_MAX_QUERIES
-        value: "12"
-      - key: BRAVE_SEARCH_RESULTS_PER_QUERY
-        value: "20"
-      - key: DISCOVERY_PROFILE_NEW_SOURCES
-        value: "5"
-      - key: DISCOVERY_MIN_INTERVAL_HOURS
-        value: "24"

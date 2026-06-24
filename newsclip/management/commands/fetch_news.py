@@ -16,12 +16,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from decouple import config
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone as dj_timezone
 from django.db import IntegrityError
 
 from newsclip.discovery import discover_client_sources, fetch_sitemap_endpoint
 from newsclip.models import Client, Article, Source, SourceEndpoint, FetchLog
+from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.utils import save_article
 
 from newsapi import NewsApiClient # type: ignore
@@ -167,6 +169,12 @@ class Command(BaseCommand):
                 # 2. Google RSS (Busca Dinâmica)
                 futures_map[executor.submit(self.fetch_google_rss, client, kws, since_dt)] = "GoogleRSS"
 
+                if getattr(settings, "GDELT_ENABLED", True):
+                    futures_map[executor.submit(fetch_gdelt, client, kws, since_dt, self.log)] = "GDELT"
+
+                if getattr(settings, "YOUTUBE_API_KEY", "") or client.youtube:
+                    futures_map[executor.submit(fetch_youtube, client, kws, since_dt, self.log)] = "YouTube"
+
                 # 3. Fontes do Banco de Dados (RSS e Scrape)
                 active_sources = Source.objects.filter(is_active=True)
                 for source in active_sources:
@@ -247,6 +255,7 @@ class Command(BaseCommand):
                         created = save_article(
                             client=client, title=title, url=url, raw_date=item.get('pubDate'),
                             source=item.get('source_id') or "NewsData.io", content_text=content_text,
+                            provider="NEWSDATA",
                         )
                         count_saved += int(created is not None)
 
@@ -302,6 +311,7 @@ class Command(BaseCommand):
                         raw_date=publication_date.isoformat() if publication_date else None,
                         source=entry.get('source', {}).get('title') or "Google News",
                         content_text=content_text,
+                        provider="GOOGLE_RSS",
                     )
                     count_saved += int(created is not None)
         except Exception as e:
@@ -353,7 +363,7 @@ class Command(BaseCommand):
                 source_name = source_obj.name
                 created = save_article(client=client, title=title, url=url,
                                        raw_date=publication_date_aware.isoformat() if publication_date_aware else None,
-                                       source=source_name, content_text=content_text)
+                                       source=source_name, content_text=content_text, provider="RSS")
                 count_saved += int(created is not None)
         except Exception as e:
             self.log(f"Erro RSS {source_obj.name}: {e}", level='ERROR', client=client, source=source_obj)
@@ -404,7 +414,7 @@ class Command(BaseCommand):
                 article_url = urljoin(source_obj.url, article_url)
                 
                 created = save_article(client=client, title=title, url=article_url, raw_date=None,
-                                       source=source_obj.name, content_text=None)
+                                       source=source_obj.name, content_text=None, provider="SCRAPE")
                 count_saved += int(created is not None)
 
         except Exception as e:
@@ -441,6 +451,7 @@ class Command(BaseCommand):
                         created = save_article(
                             client=client, title=title, url=url, raw_date=article_data.get('publishedAt'),
                             source=source_name, content_text=content_text,
+                            provider="NEWSAPI",
                         )
                         count_saved += int(created is not None)
 

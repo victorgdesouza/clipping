@@ -57,5 +57,5 @@ class ClientForm(forms.ModelForm):
             "domains": "Separe os dominios por virgula.",
             "instagram": "Opcional. Use o perfil publico do cliente.",
             "x": "Opcional. Use o perfil publico do cliente.",
-            "youtube": "Opcional. Use o canal ou usuario publico do cliente.",
+            "youtube": "Opcional. Canais informados sao fontes adicionais; a busca ampla usa o nome e as palavras-chave do cliente.",
         }
