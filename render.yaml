@@ -53,11 +53,13 @@ services:
       - key: GDELT_ENABLED
         value: "true"
       - key: GDELT_MAX_QUERIES
-        value: "3"
+        value: "1"
       - key: GDELT_MAX_RECORDS
-        value: "75"
+        value: "50"
       - key: GDELT_MIN_INTERVAL_SECONDS
-        value: "6"
+        value: "20"
+      - key: GDELT_RATE_LIMIT_SLEEP_SECONDS
+        value: "30"
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: BRAVE_SEARCH_MAX_QUERIES
