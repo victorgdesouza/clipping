@@ -21,7 +21,7 @@ from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, Gene
 from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.signals import update_search_vector
 from newsclip.templatetags.source_extras import domain
-from newsclip.utils import save_article, validate_article_candidate
+from newsclip.utils import deduplicate_articles_for_display, save_article, validate_article_candidate
 from newsclip.views import check_task_status
 
 
@@ -70,11 +70,36 @@ class NewsCollectionRecallTests(TestCase):
         self.assertEqual(Article.objects.filter(client=self.client_a).count(), 1)
         self.assertEqual(Article.objects.get(client=self.client_a).url, "https://jornal.example/materia")
 
-    def test_same_title_from_different_sources_is_preserved(self):
+    def test_same_title_from_different_sources_is_saved_only_once(self):
         save_article(self.client_a, "Noticia importante", "https://a.example/1", None, "Fonte A")
         save_article(self.client_a, "Noticia importante", "https://b.example/2", None, "Fonte B")
 
-        self.assertEqual(Article.objects.filter(client=self.client_a).count(), 2)
+        self.assertEqual(Article.objects.filter(client=self.client_a).count(), 1)
+
+    def test_existing_duplicate_titles_are_hidden_from_display(self):
+        Article.objects.create(
+            client=self.client_a,
+            title="Justiça de Rio Preto determina bloqueio de bens - G1",
+            url="https://g1.globo.com/sp/rio-preto/noticia/1",
+            source="G1",
+            published_at=timezone.now(),
+            dedup_key="legacy-g1-1",
+        )
+        Article.objects.create(
+            client=self.client_a,
+            title="Justiça de Rio Preto determina bloqueio de bens",
+            url="https://g1.globo.com/sp/rio-preto/noticia/1?utm_source=google",
+            source="g1.globo.com",
+            published_at=timezone.now(),
+            dedup_key="legacy-g1-2",
+        )
+
+        visible = deduplicate_articles_for_display(
+            Article.objects.filter(client=self.client_a).order_by("-published_at", "-id")
+        )
+
+        self.assertEqual(len(visible), 1)
+        self.assertEqual(visible[0].url.split("?", 1)[0], "https://g1.globo.com/sp/rio-preto/noticia/1")
 
     def test_excluded_term_blocks_ambiguous_city(self):
         self.client_a.excluded_keywords = "Rio Preto da Eva"
@@ -468,7 +493,7 @@ class ClientAccessTests(TestCase):
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]))
         self.assertEqual(response.status_code, 403)
 
-    def test_dashboard_exposes_visual_coverage_metrics(self):
+    def test_dashboard_hides_internal_coverage_metrics(self):
         save_article(
             self.client_record,
             "Cliente Teste aparece em noticia local",
@@ -483,10 +508,28 @@ class ClientAccessTests(TestCase):
         response = self.client.get(reverse("dashboard"))
 
         self.assertEqual(response.status_code, 200)
-        client = response.context["clients"][0]
-        self.assertEqual(client.coverage["total"], 1)
-        self.assertIn("GDELT", client.coverage["providers_list"])
-        self.assertContains(response, "Cobertura")
+        self.assertNotContains(response, "Cobertura")
+        self.assertNotContains(response, "Provedores ativos")
+        self.assertNotContains(response, "GDELT")
+
+    def test_client_news_hides_source_and_quality_columns(self):
+        save_article(
+            self.client_record,
+            "Cliente Teste aparece em noticia local",
+            "https://jornal.example/noticia",
+            timezone.now().isoformat(),
+            "Jornal Local",
+            "Conteudo sobre o cliente teste",
+            provider="GDELT",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "<th>Fonte</th>", html=True)
+        self.assertNotContains(response, "<th>Qualidade</th>", html=True)
+        self.assertNotContains(response, "Validada")
 
     @patch("newsclip.views.async_task", return_value="task-123")
     def test_owner_starts_fetch_in_background(self, async_task_mock):

@@ -167,7 +167,18 @@ def canonicalize_article_url(value: str) -> str:
     return urlunsplit((parts.scheme.casefold(), f"{host}{port}", path, query, ""))
 
 
-def article_dedup_key(title: str, source: str) -> str:
+SOURCE_SUFFIX_HINTS = {
+    "g1",
+    "globo",
+    "diario da regiao",
+    "diario da regiao",
+    "youtube",
+    "google news",
+    "google rss",
+}
+
+
+def normalized_article_title(title: str, source: str = "") -> str:
     normalized_source = normalize_match_text(source)
     normalized_title = normalize_match_text(title)
     # Google News costuma anexar " - Fonte" ao titulo. A fonte ja faz parte
@@ -177,9 +188,53 @@ def article_dedup_key(title: str, source: str) -> str:
         if normalized_source and normalized_title.endswith(suffix):
             normalized_title = normalized_title[: -len(suffix)].strip()
             break
-    normalized_title = re.sub(r"[^a-z0-9]+", " ", normalized_title).strip()
-    payload = f"{normalized_source}|{normalized_title}".encode("utf-8")
+    for separator in (" - ", " | ", " — ", " – "):
+        if separator in normalized_title:
+            possible_title, possible_source = normalized_title.rsplit(separator, 1)
+            cleaned_source = re.sub(r"[^a-z0-9]+", " ", possible_source).strip()
+            if cleaned_source in SOURCE_SUFFIX_HINTS or len(cleaned_source.split()) <= 4:
+                normalized_title = possible_title.strip()
+                break
+    return re.sub(r"[^a-z0-9]+", " ", normalized_title).strip()
+
+
+def article_dedup_key(title: str, source: str = "") -> str:
+    normalized_title = normalized_article_title(title, source)
+    payload = f"story|{normalized_title}".encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def is_duplicate_article(client, title: str, source: str = "", url: str = "") -> bool:
+    normalized_title = normalized_article_title(title, source)
+    canonical_url = canonicalize_article_url(url)
+    if not normalized_title and not canonical_url:
+        return False
+
+    candidates = Article.objects.filter(client=client)
+    if canonical_url:
+        candidates = candidates.filter(Q(url=canonical_url) | Q(title__isnull=False))
+    for article in candidates.only("title", "source", "url"):
+        if canonical_url and canonicalize_article_url(article.url) == canonical_url:
+            return True
+        if normalized_title and normalized_article_title(article.title, article.source) == normalized_title:
+            return True
+    return False
+
+
+def deduplicate_articles_for_display(articles):
+    seen = set()
+    unique = []
+    for article in articles:
+        key = article_dedup_key(article.title, article.source)
+        url_key = canonicalize_article_url(article.url)
+        marker = key or url_key
+        if marker in seen or (url_key and url_key in seen):
+            continue
+        seen.add(marker)
+        if url_key:
+            seen.add(url_key)
+        unique.append(article)
+    return unique
 
 
 def client_excluded_terms(client) -> list[str]:
@@ -282,9 +337,10 @@ def save_article(client, title, url, raw_date, source, content_text=None, provid
 
     article_instance = None
     try:
-        if Article.objects.filter(client=client).filter(
-            Q(url=processed_url) | Q(dedup_key=dedup_key)
-        ).exists():
+        if Article.objects.filter(client=client).filter(Q(url=processed_url) | Q(dedup_key=dedup_key)).exists():
+            return None
+
+        if is_duplicate_article(client, processed_title, processed_source, processed_url):
             return None
 
         with transaction.atomic():
