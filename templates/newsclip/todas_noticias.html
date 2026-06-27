@@ -25,7 +25,6 @@
       <thead>
         <tr>
           <th>Titulo</th>
-          <th>Fonte</th>
           <th>Data</th>
           <th>Link</th>
         </tr>
@@ -34,13 +33,12 @@
         {% for noticia in item.noticias %}
         <tr>
           <td>{{ noticia.title|truncatechars:80 }}</td>
-          <td>{{ noticia.source }}</td>
           <td>{{ noticia.published_at|date:"d/m/Y H:i" }}</td>
           <td><a href="{{ noticia.url }}" target="_blank" rel="noopener">Ver noticia</a></td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="4" class="empty-message">Nenhuma noticia recente.</td>
+          <td colspan="3" class="empty-message">Nenhuma noticia recente.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -77,7 +75,6 @@
               tbody.innerHTML += `
                 <tr>
                   <td>${n.title}</td>
-                  <td>${n.source}</td>
                   <td>${n.published_at}</td>
                   <td><a href="${n.url}" target="_blank" rel="noopener">Ver noticia</a></td>
                 </tr>

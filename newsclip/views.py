@@ -22,6 +22,7 @@ from django_q.tasks import async_task
 
 from .forms import ClientForm, ReportForm
 from .models import Article, Client, DiscoveryRun, GeneratedReport
+from .utils import deduplicate_articles_for_display
 
 
 def user_can_access_client(user, client):
@@ -124,13 +125,14 @@ class BuscarTodasNoticiasView(LoginRequiredMixin, ListView):
         clientes_noticias_display = []
 
         for cliente in context[self.context_object_name]:
-            artigos = Article.objects.filter(client=cliente, excluded=False).order_by("-published_at")[:5]
-            total_artigos = Article.objects.filter(client=cliente, excluded=False).count()
+            artigos_unicos = deduplicate_articles_for_display(
+                Article.objects.filter(client=cliente, excluded=False).order_by("-published_at", "-id")
+            )
             clientes_noticias_display.append(
                 {
                     "cliente": cliente,
-                    "noticias": artigos,
-                    "total": total_artigos,
+                    "noticias": artigos_unicos[:5],
+                    "total": len(artigos_unicos),
                 }
             )
 
@@ -143,7 +145,9 @@ def noticias_cliente_json(request, pk):
     if not request.user.is_authenticated or not user_can_access_client(request.user, client):
         return HttpResponseForbidden()
 
-    artigos = Article.objects.filter(client=client, excluded=False).order_by("-published_at")
+    artigos = deduplicate_articles_for_display(
+        Article.objects.filter(client=client, excluded=False).order_by("-published_at", "-id")
+    )
     dados = [
         {
             "id": artigo.id,
@@ -259,7 +263,8 @@ def client_news(request, client_id):
         query_params = request.GET.urlencode()
         return redirect(f"{redirect_url}?{query_params}" if query_params else redirect_url)
 
-    paginator = Paginator(articles_qs, page_size)
+    display_articles = deduplicate_articles_for_display(articles_qs)
+    paginator = Paginator(display_articles, page_size)
     try:
         page_obj = paginator.page(page_number)
     except PageNotAnInteger:
@@ -267,7 +272,8 @@ def client_news(request, client_id):
     except EmptyPage:
         page_obj = paginator.page(paginator.num_pages)
 
-    qs_for_charts = articles_qs.exclude(published_at__isnull=True)
+    display_article_ids = [article.pk for article in display_articles]
+    qs_for_charts = Article.objects.filter(pk__in=display_article_ids).exclude(published_at__isnull=True)
     daily_qs = (
         qs_for_charts.annotate(day=TruncDate("published_at"))
         .values("day")

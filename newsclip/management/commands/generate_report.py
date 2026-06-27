@@ -13,6 +13,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from newsclip.models import Article, Client, GeneratedReport
+from newsclip.utils import deduplicate_articles_for_display
 
 
 CONTENT_TYPES = {
@@ -49,9 +50,9 @@ class Command(BaseCommand):
                 published_at__gte=now - relativedelta(days=days),
                 published_at__lte=now,
             )
-        articles = articles.order_by("published_at")
+        articles = deduplicate_articles_for_display(articles.order_by("published_at", "id"))
 
-        if not articles.exists():
+        if not articles:
             raise CommandError(f"{client.name}: nenhum artigo disponivel para o periodo.")
 
         data = [

@@ -12,40 +12,11 @@
 </section>
 
 {% if clients %}
-<section class="coverage-summary" aria-label="Resumo de cobertura">
-  <div><span>Clientes</span><strong>{{ coverage_summary.clients }}</strong></div>
-  <div><span>Noticias validadas</span><strong>{{ coverage_summary.articles }}</strong></div>
-  <div><span>Fontes cobertas</span><strong>{{ coverage_summary.sources }}</strong></div>
-  <div><span>Provedores ativos</span><strong>{{ coverage_summary.providers }}</strong></div>
-</section>
-
 <div class="client-grid">
   {% for c in clients %}
   <article class="client-card">
     <span class="client-name">Cliente</span>
     <h2 class="client-card__title">{{ c.name }}</h2>
-    <div class="coverage-heading">
-      <span>Cobertura</span>
-      <strong>{{ c.coverage.score }}%</strong>
-    </div>
-    <div class="coverage-bar" role="progressbar" aria-valuenow="{{ c.coverage.score }}" aria-valuemin="0" aria-valuemax="100">
-      <span style="width: {{ c.coverage.score }}%"></span>
-    </div>
-    <div class="coverage-metrics">
-      <span><strong>{{ c.coverage.recent }}</strong> em 30 dias</span>
-      <span><strong>{{ c.coverage.sources }}</strong> fontes</span>
-      <span><strong>{{ c.coverage.accepted_rate }}%</strong> validadas</span>
-    </div>
-    <div class="provider-list" aria-label="Provedores">
-      {% for provider in c.coverage.providers_list %}
-        <span>{{ provider }}</span>
-      {% empty %}
-        <span>Sem coleta</span>
-      {% endfor %}
-    </div>
-    {% if c.coverage.review %}
-      <p class="coverage-review">{{ c.coverage.review }} noticia(s) aguardando revisao.</p>
-    {% endif %}
 
     <a href="{% url 'client_news' c.id %}" class="button">Ver noticias</a>
 

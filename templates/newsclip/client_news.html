@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load source_extras %}
 
 {% block title %}Noticias de {{ client.name }}{% endblock title %}
 
@@ -8,7 +7,7 @@
   <div>
     <p class="page-eyebrow">Noticias</p>
     <h1 class="page-title">{{ client.name }}</h1>
-    <p>Revise mencoes coletadas, filtre por fonte e gere relatorios.</p>
+    <p>Revise mencoes coletadas e gere relatorios.</p>
   </div>
   <div class="action-bar">
     <a class="button button-ghost" href="{% url 'dashboard' %}">Dashboard</a>
@@ -168,16 +167,6 @@
     <select id="sort" name="sort">
       <option value="date-desc" {% if sort == "date-desc" %}selected{% endif %}>Data (mais recente)</option>
       <option value="date-asc" {% if sort == "date-asc" %}selected{% endif %}>Data (mais antiga)</option>
-      <option value="source" {% if sort == "source" %}selected{% endif %}>Fonte</option>
-    </select>
-  </div>
-  <div class="filter-group">
-    <label for="source">Fonte:</label>
-    <select id="source" name="source">
-      <option value="">Todas as fontes</option>
-      {% for src in sources %}
-      <option value="{{ src }}" {% if selected_source == src %}selected{% endif %}>{{ src }}</option>
-      {% endfor %}
     </select>
   </div>
   <button type="submit" class="button">Aplicar filtros</button>
@@ -191,7 +180,6 @@
     {% endfor %}
   </select>
   <input type="hidden" name="sort" value="{{ sort }}">
-  <input type="hidden" name="source" value="{{ selected_source }}">
   <input type="hidden" name="q" value="{{ current_search_query }}">
 </form>
 
@@ -211,8 +199,6 @@
         <th><input type="checkbox" id="select-all"></th>
         <th>Titulo</th>
         <th>Data</th>
-        <th>Fonte</th>
-        <th>Qualidade</th>
       </tr>
     </thead>
     <tbody>
@@ -221,12 +207,10 @@
         <td><input type="checkbox" name="ids[]" value="{{ art.id }}" class="select-item"></td>
         <td><a href="{{ art.url }}" target="_blank">{{ art.title }}</a></td>
         <td>{{ art.published_at|date:"d/m/Y H:i" }}</td>
-        <td>{{ art.source|domain }}</td>
-        <td><span class="quality-badge quality-{{ art.validation_status|lower }}">{{ art.get_validation_status_display }} · {{ art.relevance_score }}</span></td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="5" class="empty-message">Nenhum artigo encontrado.</td>
+        <td colspan="3" class="empty-message">Nenhum artigo encontrado.</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -235,9 +219,9 @@
 
 <div class="pagination">
   {% if articles.has_previous %}
-  <a href="?page=1&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page=1&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Primeira</a>
-  <a href="?page={{ articles.previous_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page={{ articles.previous_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Anterior</a>
   {% endif %}
 
@@ -246,9 +230,9 @@
   </span>
 
   {% if articles.has_next %}
-  <a href="?page={{ articles.next_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page={{ articles.next_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Proxima</a>
-  <a href="?page={{ articles.paginator.num_pages }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if selected_source %}&source={{ selected_source }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page={{ articles.paginator.num_pages }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Ultima</a>
   {% endif %}
 </div>
@@ -261,16 +245,6 @@
     <div class="chart-wrapper">
       {% if daily_labels_json and daily_counts_json %}
       <canvas id="chart-daily" width="600" height="250"></canvas>
-      {% else %}
-      <p class="no-data">Sem dados para exibir.</p>
-      {% endif %}
-    </div>
-  </div>
-  <div class="chart-box">
-    <h2>Top 5 Fontes</h2>
-    <div class="chart-wrapper">
-      {% if source_labels_json and source_counts_json %}
-      <canvas id="chart-sources" width="600" height="250"></canvas>
       {% else %}
       <p class="no-data">Sem dados para exibir.</p>
       {% endif %}
@@ -300,30 +274,6 @@
           maintainAspectRatio: false,
           animation: false,
           scales: { y: { beginAtZero: true } }
-        }
-      });
-    }
-    {% endif %}
-
-    {% if source_labels_json and source_counts_json %}
-    var ctxSources = document.getElementById('chart-sources');
-    if (ctxSources && window.Chart) {
-      new Chart(ctxSources, {
-        type: 'bar',
-        data: {
-          labels: {{ source_labels_json|safe }},
-          datasets: [{
-            label: 'Publicacoes',
-            data: {{ source_counts_json|safe }},
-            borderWidth: 2
-          }]
-        },
-        options: {
-          responsive: false,
-          maintainAspectRatio: false,
-          animation: false,
-          indexAxis: 'y',
-          scales: { x: { beginAtZero: true } }
         }
       });
     }
