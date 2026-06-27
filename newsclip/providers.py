@@ -154,6 +154,13 @@ def _gdelt_date(value: str):
     return value
 
 
+def _gdelt_rate_limit_delay(response) -> int:
+    retry_after = response.headers.get("Retry-After", "")
+    if retry_after.isdigit():
+        return max(0, min(int(retry_after), getattr(settings, "GDELT_RATE_LIMIT_SLEEP_SECONDS", 30)))
+    return max(0, getattr(settings, "GDELT_RATE_LIMIT_SLEEP_SECONDS", 30))
+
+
 def fetch_gdelt(client, keywords: list[str], since_dt, log=None) -> int:
     run = DiscoveryRun.objects.create(client=client, provider="GDELT", status="RUNNING")
     saved_count = 0
@@ -169,19 +176,37 @@ def fetch_gdelt(client, keywords: list[str], since_dt, log=None) -> int:
             if index:
                 time.sleep(getattr(settings, "GDELT_MIN_INTERVAL_SECONDS", 6))
             queries_count += 1
+            params = {
+                "query": f'"{term}" sourcelang:portuguese',
+                "mode": "ArtList",
+                "maxrecords": getattr(settings, "GDELT_MAX_RECORDS", 50),
+                "format": "json",
+                "sort": "DateDesc",
+                "startdatetime": since_dt.astimezone(dt_timezone.utc).strftime("%Y%m%d%H%M%S"),
+            }
             response = requests.get(
                 GDELT_DOC_URL,
-                params={
-                    "query": f'"{term}" sourcelang:portuguese',
-                    "mode": "ArtList",
-                    "maxrecords": getattr(settings, "GDELT_MAX_RECORDS", 75),
-                    "format": "json",
-                    "sort": "DateDesc",
-                    "startdatetime": since_dt.astimezone(dt_timezone.utc).strftime("%Y%m%d%H%M%S"),
-                },
+                params=params,
                 headers={"User-Agent": "ClippingApp/1.0"},
                 timeout=30,
             )
+            if response.status_code == 429:
+                delay = _gdelt_rate_limit_delay(response)
+                if delay:
+                    time.sleep(delay)
+                    response = requests.get(
+                        GDELT_DOC_URL,
+                        params=params,
+                        headers={"User-Agent": "ClippingApp/1.0"},
+                        timeout=30,
+                    )
+                if response.status_code == 429:
+                    message = "GDELT limitou temporariamente as consultas; coleta continuará pelas demais fontes."
+                    errors.append(message)
+                    if log:
+                        log(message, level="INFO", client=client)
+                    break
+
             response.raise_for_status()
             for item in response.json().get("articles", []):
                 url = item.get("url", "")
@@ -203,9 +228,9 @@ def fetch_gdelt(client, keywords: list[str], since_dt, log=None) -> int:
     except (requests.RequestException, ValueError) as exc:
         errors.append(str(exc))
         if log:
-            log(f"GDELT: {exc}", level="WARNING", client=client)
+            log("GDELT indisponivel nesta tentativa; coleta continuará pelas demais fontes.", level="INFO", client=client)
 
-    status = "PARTIAL" if errors and results_count else ("ERROR" if errors else "SUCCESS")
+    status = "PARTIAL" if errors else "SUCCESS"
     _finish_run(
         run, status=status, queries=queries_count, results=results_count,
         articles=saved_count, error=" | ".join(errors),

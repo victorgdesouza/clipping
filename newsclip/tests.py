@@ -284,6 +284,23 @@ class AdditionalProvidersTests(TestCase):
         self.assertEqual(run.results_count, 1)
         self.assertEqual(run.articles_count, 1)
 
+    @override_settings(GDELT_MAX_QUERIES=1, GDELT_RATE_LIMIT_SLEEP_SECONDS=0)
+    @patch("newsclip.providers.requests.get")
+    def test_gdelt_rate_limit_is_handled_as_partial_without_raising(self, get_mock):
+        response = Mock(status_code=429, headers={})
+        response.raise_for_status.side_effect = AssertionError("raise_for_status should not run for repeated 429")
+        get_mock.return_value = response
+        log_mock = Mock()
+
+        saved = fetch_gdelt(self.client_record, ["mobilidade"], self.since, log=log_mock)
+
+        self.assertEqual(saved, 0)
+        run = DiscoveryRun.objects.get(provider="GDELT")
+        self.assertEqual(run.status, "PARTIAL")
+        self.assertIn("limitou temporariamente", run.error_message)
+        log_mock.assert_called_once()
+        self.assertIn("limitou temporariamente", log_mock.call_args.args[0])
+
 
 class AutomaticDiscoveryTests(TestCase):
     def setUp(self):
