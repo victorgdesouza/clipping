@@ -638,6 +638,15 @@ class ClientAccessTests(TestCase):
         self.assertNotContains(response, "Provedores ativos")
         self.assertNotContains(response, "GDELT")
 
+    @patch("newsclip.views.revalidate_accepted_articles_for_client")
+    def test_dashboard_does_not_run_expensive_revalidation(self, revalidate_mock):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        revalidate_mock.assert_not_called()
+
     def test_client_news_hides_source_and_quality_columns(self):
         save_article(
             self.client_record,

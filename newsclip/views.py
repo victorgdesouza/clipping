@@ -125,7 +125,6 @@ class BuscarTodasNoticiasView(LoginRequiredMixin, ListView):
         clientes_noticias_display = []
 
         for cliente in context[self.context_object_name]:
-            revalidate_accepted_articles_for_client(cliente)
             artigos_unicos = deduplicate_articles_for_display(
                 Article.objects.filter(client=cliente, excluded=False, validation_status="ACCEPTED").order_by("-published_at", "-id")
             )
@@ -146,7 +145,7 @@ def noticias_cliente_json(request, pk):
     if not request.user.is_authenticated or not user_can_access_client(request.user, client):
         return HttpResponseForbidden()
 
-    revalidate_accepted_articles_for_client(client)
+    revalidate_accepted_articles_for_client(client, limit=100)
     artigos = deduplicate_articles_for_display(
         Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED").order_by("-published_at", "-id")
     )
@@ -173,7 +172,6 @@ def dashboard(request):
     active_providers = set()
 
     for client in clients:
-        revalidate_accepted_articles_for_client(client)
         articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
         metrics = articles.aggregate(
             total=Count("id"),
@@ -231,7 +229,7 @@ def client_news(request, client_id):
     source_filter = request.GET.get("source", "")
     current_search_query = request.GET.get("q", "")
 
-    revalidate_accepted_articles_for_client(client)
+    revalidate_accepted_articles_for_client(client, limit=150)
     articles_qs = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
 
     if source_filter:
