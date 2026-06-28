@@ -247,10 +247,25 @@ class CountryBullsRelevanceTests(TestCase):
             "Jogo do Brasil altera horário de expediente da Prefeitura de Rio Preto",
             "15º Rodeio de Caminhões da Raízen",
             "Paulo Coelho participa de evento cultural",
+            "Exportação de gado vivo acelera e coloca Brasil no caminho de um recorde em 2026",
+            "RS apresenta plataforma de alerta climático para a produção pecuária",
+            "Agroleite 2026 abre inscrições de animais das raças Holandesa e Jersey para julgamentos",
+            "Mirassol anuncia parceria estratégica com a Rodobens",
         ]
         for title in rejected_titles:
             with self.subTest(title=title):
                 self.assert_rejected(title)
+
+    def test_rejects_generic_non_official_youtube_results(self):
+        rejected_samples = [
+            ("■ NÃO é truque■", "https://www.youtube.com/watch?v=7h6U0V3mCZg", "YouTube - André Moraes Mestre Queijeiro"),
+            ("mozzarella AO VIVO ■", "https://www.youtube.com/watch?v=QVvnE9eCkxk", "YouTube - André Moraes Mestre Queijeiro"),
+        ]
+        for title, url, source in rejected_samples:
+            with self.subTest(title=title):
+                result = validate_article_candidate(self.client_record, title, "", url, source, provider="YOUTUBE")
+                self.assertEqual(result["status"], "REJECTED", title)
+                self.assertLess(result["score"], 40)
 
     def test_accepts_country_bulls_related_results(self):
         accepted_titles = [
@@ -268,6 +283,13 @@ class CountryBullsRelevanceTests(TestCase):
             "ENTRADA SOLIDÁRIA",
             url="https://www.youtube.com/@riopretocountrybullsoficial/videos",
             source="YouTube - riopretocountrybullsoficial",
+        )
+
+    def test_non_official_youtube_requires_strong_identity(self):
+        self.assert_accepted(
+            "Rio Preto Country Bulls chega à 28ª edição com novidades e grandes atrações",
+            url="https://www.youtube.com/watch?v=e97sXMcaFz8",
+            source="YouTube - TH+ SBT Interior",
         )
 
     def test_context_only_is_not_saved_as_final_article(self):
@@ -662,7 +684,7 @@ class ReportGenerationTests(TestCase):
         self.client_record.users.add(self.user)
         Article.objects.create(
             client=self.client_record,
-            title="Noticia de teste com acentuacao",
+            title="Cliente Relatorio aparece em noticia de teste com acentuacao",
             url="https://example.com/noticia",
             source="Fonte Teste",
             published_at=timezone.now(),
@@ -684,6 +706,43 @@ class ReportGenerationTests(TestCase):
                 self.assertTrue(content.startswith(signatures[output_format]))
                 self.assertEqual(report.size, len(content))
                 self.assertEqual(report.created_by, self.user)
+
+    def test_report_revalidates_stale_accepted_articles(self):
+        client = Client.objects.create(
+            name="Rio Preto Country Bulls",
+            name_variations="Country Bulls, riopretocountrybulls",
+            context_terms="Rio Preto, rodeio, gado, pecuaria, ingressos",
+        )
+        client.users.add(self.user)
+        Article.objects.create(
+            client=client,
+            title="Rio Preto Country Bulls terá nova edição",
+            url="https://example.com/country-bulls",
+            source="Fonte Teste",
+            published_at=timezone.now(),
+            validation_status="ACCEPTED",
+            relevance_score=100,
+            dedup_key="country-bulls-valid",
+        )
+        stale = Article.objects.create(
+            client=client,
+            title="Exportação de gado vivo acelera e coloca Brasil no caminho de um recorde em 2026",
+            url="https://canaldocriador.com.br/geral/exportacao-de-gado-vivo-recorde-2026",
+            source="Canal do Criador",
+            published_at=timezone.now(),
+            validation_status="ACCEPTED",
+            relevance_score=100,
+            dedup_key="country-bulls-stale-invalid",
+        )
+
+        call_command("generate_report", client_id=client.pk, days="all", format="csv", created_by_id=self.user.pk)
+
+        stale.refresh_from_db()
+        report = GeneratedReport.objects.get(client=client, format="csv")
+        content = bytes(report.content).decode("utf-8-sig")
+        self.assertEqual(stale.validation_status, "REJECTED")
+        self.assertIn("Rio Preto Country Bulls terá nova edição", content)
+        self.assertNotIn("Exportação de gado vivo", content)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)

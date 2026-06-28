@@ -284,6 +284,22 @@ def client_identity_terms(client) -> list[str]:
     return result
 
 
+def strong_client_identity_terms(client) -> list[str]:
+    """Termos que identificam o cliente com baixa chance de falso positivo."""
+    terms = []
+    for term in client_identity_terms(client):
+        normalized = normalize_match_text(term)
+        words = normalized.split()
+        is_handle = term.strip().startswith("@") or any(
+            normalized == normalize_match_text(handle).lstrip("@")
+            for handle in social_handle_terms(client)
+        )
+        # Evita que uma palavra solta ou um recorte muito amplo vire identidade final.
+        if is_handle or len(words) >= 2 or len(normalized) >= 12:
+            terms.append(term)
+    return terms
+
+
 def client_context_terms(client) -> list[str]:
     values = []
     values.extend(split_terms(getattr(client, "context_terms", "")))
@@ -363,6 +379,24 @@ def is_official_social_source(client, url: str, source: str = "") -> bool:
     return any(normalize_match_text(handle) in searchable for handle in social_handle_terms(client))
 
 
+def is_social_or_video_source(url: str, source: str = "", provider: str = "") -> bool:
+    searchable = normalize_match_text(f"{url} {source} {provider}")
+    social_markers = (
+        "youtube.com",
+        "youtu.be",
+        "youtube",
+        "instagram.com",
+        "instagram",
+        "facebook.com",
+        "facebook",
+        "tiktok.com",
+        "tiktok",
+        "x.com",
+        "twitter.com",
+    )
+    return any(marker in searchable for marker in social_markers)
+
+
 def matched_terms(searchable: str, terms: list[str]) -> list[str]:
     matches = []
     searchable_norm = normalize_match_text(searchable)
@@ -416,33 +450,43 @@ def validate_article_candidate(
         return {"status": "REJECTED", "score": 0, "reason": "Contem termo proibido"}
 
     identity_terms = client_identity_terms(client)
+    strong_identity_terms = strong_client_identity_terms(client)
     context_terms = client_context_terms(client)
     searchable = " ".join([title or "", content or "", url or "", source or ""])
     identity_matches = matched_terms(searchable, identity_terms)
+    strong_identity_matches = matched_terms(searchable, strong_identity_terms)
     context_matches = matched_terms(searchable, context_terms)
     official_source = is_official_social_source(client, url, source)
     trusted_source = is_trusted_source(client, url, source)
+    social_or_video_source = is_social_or_video_source(url, source, provider)
 
     full_name_norm = normalize_match_text(getattr(client, "name", ""))
     searchable_norm = normalize_match_text(searchable)
+    full_name_match = bool(full_name_norm and full_name_norm in searchable_norm)
     score = 0
     reason = "Sem identidade forte do cliente"
 
     if official_source:
         score = 100
         reason = "Origem oficial do cliente"
-    elif full_name_norm and full_name_norm in searchable_norm:
+    elif full_name_match:
         score = 100
         reason = f"Nome oficial encontrado: {getattr(client, 'name', '')}"
-    elif identity_matches and context_matches:
+    elif strong_identity_matches and context_matches:
         score = 85
-        reason = f"Identidade + contexto: {identity_matches[0]} + {context_matches[0]}"
+        reason = f"Identidade forte + contexto: {strong_identity_matches[0]} + {context_matches[0]}"
+    elif strong_identity_matches:
+        score = 70
+        reason = f"Identidade forte encontrada: {strong_identity_matches[0]}"
+    elif identity_matches and context_matches:
+        score = 55
+        reason = f"Identidade fraca + contexto: {identity_matches[0]} + {context_matches[0]}"
     elif identity_matches:
-        score = 70
-        reason = f"Identidade encontrada: {identity_matches[0]}"
+        score = 40
+        reason = f"Identidade fraca isolada: {identity_matches[0]}"
     elif trusted_source and len(context_matches) >= 2:
-        score = 70
-        reason = f"Fonte confiavel com contexto forte: {', '.join(context_matches[:2])}"
+        score = 55
+        reason = f"Fonte confiavel com contexto, mas sem identidade: {', '.join(context_matches[:2])}"
     elif len(context_matches) >= 2:
         normalized_matches = {normalize_match_text(item) for item in context_matches}
         person_context = any("paulo emilio" in item for item in normalized_matches)
@@ -459,6 +503,10 @@ def validate_article_candidate(
     elif context_matches:
         score = 35
         reason = f"Contexto isolado insuficiente: {context_matches[0]}"
+
+    if social_or_video_source and not official_source and not (full_name_match or strong_identity_matches):
+        score = min(score, 35)
+        reason = f"{reason}; midia social/video nao oficial sem identidade forte"
 
     if trusted_source and score >= 60:
         score = min(100, score + 10)
@@ -479,6 +527,46 @@ def validate_article_candidate(
         "score": score,
         "reason": reason,
     }
+
+
+def revalidate_article(article, persist: bool = True) -> dict:
+    validation = validate_article_candidate(
+        article.client,
+        article.title,
+        article.content or article.summary or "",
+        article.url,
+        article.source,
+        provider=article.provider,
+    )
+    if persist and (
+        article.validation_status != validation["status"]
+        or article.relevance_score != validation["score"]
+        or article.validation_reason != validation["reason"][:255]
+    ):
+        Article.objects.filter(pk=article.pk).update(
+            validation_status=validation["status"],
+            relevance_score=validation["score"],
+            validation_reason=validation["reason"][:255],
+        )
+        article.validation_status = validation["status"]
+        article.relevance_score = validation["score"]
+        article.validation_reason = validation["reason"][:255]
+    return validation
+
+
+def revalidate_accepted_articles_for_client(client, limit: int = 1000) -> int:
+    articles = Article.objects.filter(
+        client=client,
+        excluded=False,
+        validation_status="ACCEPTED",
+    ).order_by("-published_at", "-id")[:limit]
+    changed = 0
+    for article in articles:
+        previous = article.validation_status
+        validation = revalidate_article(article, persist=True)
+        if validation["status"] != previous:
+            changed += 1
+    return changed
 
 
 # —————————————————————————————————————————
