@@ -529,9 +529,10 @@ def validate_article_candidate(
     }
 
 
-def revalidate_article(article, persist: bool = True) -> dict:
+def revalidate_article(article, persist: bool = True, client=None) -> dict:
+    article_client = client or article.client
     validation = validate_article_candidate(
-        article.client,
+        article_client,
         article.title,
         article.content or article.summary or "",
         article.url,
@@ -554,8 +555,8 @@ def revalidate_article(article, persist: bool = True) -> dict:
     return validation
 
 
-def revalidate_accepted_articles_for_client(client, limit: int = 1000) -> int:
-    articles = Article.objects.filter(
+def revalidate_accepted_articles_for_client(client, limit: int = 250) -> int:
+    articles = Article.objects.select_related("client").filter(
         client=client,
         excluded=False,
         validation_status="ACCEPTED",
@@ -563,7 +564,7 @@ def revalidate_accepted_articles_for_client(client, limit: int = 1000) -> int:
     changed = 0
     for article in articles:
         previous = article.validation_status
-        validation = revalidate_article(article, persist=True)
+        validation = revalidate_article(article, persist=True, client=client)
         if validation["status"] != previous:
             changed += 1
     return changed

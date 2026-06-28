@@ -44,7 +44,7 @@ class Command(BaseCommand):
             raise CommandError("O periodo deve ser um numero de dias ou 'all'.") from exc
 
         now = timezone.now()
-        revalidate_accepted_articles_for_client(client)
+        revalidate_accepted_articles_for_client(client, limit=3000)
         articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
         if days is not None:
             articles = articles.filter(
