@@ -139,7 +139,21 @@ class FetchLog(models.Model):
 
 class Client(models.Model):
     name = models.CharField("Nome do cliente", max_length=500)
-    keywords = models.TextField(help_text="Separe por virgulas")
+    keywords = models.TextField(
+        "Termos complementares",
+        blank=True,
+        help_text="Campo legado. Estes termos sao tratados como contexto, nao como identidade forte.",
+    )
+    name_variations = models.TextField(
+        "Variacoes do nome",
+        blank=True,
+        help_text="Separe por virgulas. Ex: Country Bulls, Rio Preto Bulls, @perfiloficial.",
+    )
+    context_terms = models.TextField(
+        "Termos de contexto",
+        blank=True,
+        help_text="Separe por virgulas. Ex: rodeio, arena, ingressos, show, evento.",
+    )
     excluded_keywords = models.TextField(
         "Termos excluidos",
         blank=True,
@@ -212,6 +226,63 @@ class Article(models.Model):
     @property
     def title_truncado(self):
         return (self.title[:47] + "...") if self.title and len(self.title) > 50 else self.title
+
+
+class RelevanceAuditLog(models.Model):
+    DECISION_CHOICES = [
+        ("APPROVED", "Aprovado"),
+        ("REVIEW", "Revisao"),
+        ("REJECTED", "Rejeitado"),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="relevance_audit_logs")
+    provider = models.CharField(max_length=50, blank=True, db_index=True)
+    query = models.TextField(blank=True)
+    title = models.CharField(max_length=500, blank=True)
+    url = models.TextField(blank=True)
+    source = models.CharField(max_length=255, blank=True)
+    relevance_score = models.PositiveSmallIntegerField(default=0, db_index=True)
+    relevance_reason = models.CharField(max_length=255, blank=True)
+    decision = models.CharField(max_length=16, choices=DECISION_CHOICES, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["client", "decision", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.client}: {self.decision} ({self.relevance_score})"
+
+
+class NewsFetchJob(models.Model):
+    STATUS_CHOICES = [
+        ("queued", "Na fila"),
+        ("running", "Em execucao"),
+        ("completed", "Concluida"),
+        ("failed", "Falhou"),
+        ("cancelled", "Cancelada"),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="fetch_jobs")
+    task_id = models.CharField(max_length=64, blank=True, db_index=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued", db_index=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+    result_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["client", "status", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.client}: {self.status}"
 
 
 class GeneratedReport(models.Model):

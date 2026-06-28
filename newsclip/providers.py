@@ -13,7 +13,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from newsclip.models import DiscoveryRun
-from newsclip.utils import save_article
+from newsclip.utils import build_client_search_queries, save_article
 
 
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
@@ -93,10 +93,11 @@ def fetch_youtube(client, keywords: list[str], since_dt, log=None) -> int:
                     source=f"YouTube - {entry.get('author', 'Canal monitorado')}",
                     content_text=entry.get("summary", ""),
                     provider="YOUTUBE",
+                    query=f"channel:{channel_id}",
                 )
                 saved_count += int(saved is not None)
         if api_key:
-            terms = [client.name, *keywords]
+            terms = build_client_search_queries(client, max_queries=max(1, getattr(settings, "YOUTUBE_MAX_QUERIES", 2)))
             max_queries = max(1, getattr(settings, "YOUTUBE_MAX_QUERIES", 2))
             published_after = since_dt.astimezone(dt_timezone.utc).isoformat().replace("+00:00", "Z")
             for term in list(dict.fromkeys(item.strip() for item in terms if item.strip()))[:max_queries]:
@@ -126,6 +127,7 @@ def fetch_youtube(client, keywords: list[str], since_dt, log=None) -> int:
                         source=f"YouTube - {snippet.get('channelTitle', 'Canal')}",
                         content_text=snippet.get("description", ""),
                         provider="YOUTUBE",
+                        query=term,
                     )
                     saved_count += int(saved is not None)
         elif not channel_id:
@@ -167,7 +169,7 @@ def fetch_gdelt(client, keywords: list[str], since_dt, log=None) -> int:
     results_count = 0
     queries_count = 0
     errors = []
-    terms = [client.name, *keywords]
+    terms = build_client_search_queries(client, max_queries=max(1, getattr(settings, "GDELT_MAX_QUERIES", 1)))
     max_queries = max(1, getattr(settings, "GDELT_MAX_QUERIES", 3))
 
     try:
@@ -177,7 +179,7 @@ def fetch_gdelt(client, keywords: list[str], since_dt, log=None) -> int:
                 time.sleep(getattr(settings, "GDELT_MIN_INTERVAL_SECONDS", 6))
             queries_count += 1
             params = {
-                "query": f'"{term}" sourcelang:portuguese',
+                "query": f'{term} sourcelang:portuguese',
                 "mode": "ArtList",
                 "maxrecords": getattr(settings, "GDELT_MAX_RECORDS", 50),
                 "format": "json",
@@ -223,6 +225,7 @@ def fetch_gdelt(client, keywords: list[str], since_dt, log=None) -> int:
                     source=domain,
                     content_text=item.get("description", ""),
                     provider="GDELT",
+                    query=term,
                 )
                 saved_count += int(saved is not None)
     except (requests.RequestException, ValueError) as exc:

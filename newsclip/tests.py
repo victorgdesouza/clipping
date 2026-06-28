@@ -34,15 +34,15 @@ class DomainFilterTests(TestCase):
 
 class NewsCollectionRecallTests(TestCase):
     def setUp(self):
-        self.client_a = Client.objects.create(name="Cliente A", keywords="São Paulo")
-        self.client_b = Client.objects.create(name="Cliente B", keywords="São Paulo")
+        self.client_a = Client.objects.create(name="Cliente A", name_variations="São Paulo")
+        self.client_b = Client.objects.create(name="Cliente B", name_variations="São Paulo")
 
     def test_same_url_can_be_relevant_to_different_clients(self):
         url = "https://example.com/noticia-compartilhada"
 
-        first = save_article(self.client_a, "Notícia", url, None, "Exemplo")
-        duplicate = save_article(self.client_a, "Notícia", url, None, "Exemplo")
-        second_client = save_article(self.client_b, "Notícia", url, None, "Exemplo")
+        first = save_article(self.client_a, "Notícia sobre São Paulo", url, None, "Exemplo")
+        duplicate = save_article(self.client_a, "Notícia sobre São Paulo", url, None, "Exemplo")
+        second_client = save_article(self.client_b, "Notícia sobre São Paulo", url, None, "Exemplo")
 
         self.assertIsNotNone(first)
         self.assertIsNone(duplicate)
@@ -52,14 +52,14 @@ class NewsCollectionRecallTests(TestCase):
     def test_same_story_from_same_source_is_saved_only_once(self):
         first = save_article(
             self.client_a,
-            "Prefeitura anuncia novo projeto - Jornal Exemplo",
+            "São Paulo anuncia novo projeto - Jornal Exemplo",
             "https://jornal.example/materia?utm_source=google",
             None,
             "Jornal Exemplo",
         )
         repeated = save_article(
             self.client_a,
-            "Prefeitura anuncia novo projeto",
+            "São Paulo anuncia novo projeto",
             "https://jornal.example/materia?ref=homepage",
             None,
             "Jornal Exemplo",
@@ -71,8 +71,8 @@ class NewsCollectionRecallTests(TestCase):
         self.assertEqual(Article.objects.get(client=self.client_a).url, "https://jornal.example/materia")
 
     def test_same_title_from_different_sources_is_saved_only_once(self):
-        save_article(self.client_a, "Noticia importante", "https://a.example/1", None, "Fonte A")
-        save_article(self.client_a, "Noticia importante", "https://b.example/2", None, "Fonte B")
+        save_article(self.client_a, "Noticia importante de São Paulo", "https://a.example/1", None, "Fonte A")
+        save_article(self.client_a, "Noticia importante de São Paulo", "https://b.example/2", None, "Fonte B")
 
         self.assertEqual(Article.objects.filter(client=self.client_a).count(), 1)
 
@@ -172,7 +172,8 @@ class AdvancedValidationTests(TestCase):
     def setUp(self):
         self.client_record = Client.objects.create(
             name="Sao Jose do Rio Preto",
-            keywords="Rio Preto, mobilidade urbana",
+            name_variations="Rio Preto",
+            context_terms="mobilidade urbana",
             excluded_keywords="Rio Preto da Eva",
         )
 
@@ -198,6 +199,91 @@ class AdvancedValidationTests(TestCase):
         )
 
         self.assertEqual(result["status"], "REJECTED")
+
+
+class CountryBullsRelevanceTests(TestCase):
+    def setUp(self):
+        self.client_record = Client.objects.create(
+            name="Rio Preto Country Bulls",
+            name_variations="Country Bulls, riopretocountrybulls, @riopretocountrybullsoficial",
+            context_terms=(
+                "Paulo Emílio, São José do Rio Preto, Rio Preto, rodeio, arena, "
+                "evento, touro, peão, ingressos, show, festival, doação solidária"
+            ),
+            domains="arenacp.com.br/carlinhos-pinheiro",
+            instagram="@riopretocountrybullsoficial",
+            youtube="@riopretocountrybullsoficial",
+        )
+
+    def assert_rejected(self, title):
+        result = validate_article_candidate(
+            self.client_record,
+            title,
+            "",
+            "https://example.com/noticia",
+            "Fonte Teste",
+        )
+        self.assertEqual(result["status"], "REJECTED", title)
+        self.assertLess(result["score"], 40)
+
+    def assert_accepted(self, title, content="", url="https://example.com/noticia", source="Fonte Teste"):
+        result = validate_article_candidate(
+            self.client_record,
+            title,
+            content,
+            url,
+            source,
+        )
+        self.assertEqual(result["status"], "ACCEPTED", title)
+        self.assertGreaterEqual(result["score"], 70)
+
+    def test_rejects_generic_city_and_rodeo_false_positives(self):
+        rejected_titles = [
+            "Prefeitura apresenta estudo da PGV e anuncia desconto no IPTU 2027 em São José do Rio Preto",
+            "Adolescente de 13 anos desaparece em Rio Preto",
+            "Netflix anuncia Johnny Massaro e Rodrigo Santoro em nova serie",
+            "EXPOVG 2026 reúne atrações musicais, rodeio e cultura em Várzea Grande",
+            "Delegado acusado de matar adolescente na saída de rodeio",
+            "Jogo do Brasil altera horário de expediente da Prefeitura de Rio Preto",
+            "15º Rodeio de Caminhões da Raízen",
+            "Paulo Coelho participa de evento cultural",
+        ]
+        for title in rejected_titles:
+            with self.subTest(title=title):
+                self.assert_rejected(title)
+
+    def test_accepts_country_bulls_related_results(self):
+        accepted_titles = [
+            "Cassio Dias Barbosa X Touro Café Cia Guto Paglione: Campeão Rio Preto Country Bulls 2022",
+            "Paulo Emílio conta um pouco do começo do Country Bulls",
+            "Parceria entre Country Bulls e HB chega a quase 10 anos com nova doação solidária",
+            "REGIÃO: RODEIO E PROMOÇÃO! Consumidores de Açúcar Guarani podem concorrer a ingressos para o Country Bulls 2026",
+        ]
+        for title in accepted_titles:
+            with self.subTest(title=title):
+                self.assert_accepted(title)
+
+    def test_official_profile_accepts_short_official_post(self):
+        self.assert_accepted(
+            "ENTRADA SOLIDÁRIA",
+            url="https://www.youtube.com/@riopretocountrybullsoficial/videos",
+            source="YouTube - riopretocountrybullsoficial",
+        )
+
+    def test_context_only_is_not_saved_as_final_article(self):
+        saved = save_article(
+            self.client_record,
+            "Prefeitura anuncia nova obra em São José do Rio Preto",
+            "https://example.com/prefeitura",
+            None,
+            "Portal Local",
+            "Texto fala apenas da cidade e nao do evento.",
+            provider="GOOGLE_RSS",
+            query='"São José do Rio Preto"',
+        )
+
+        self.assertIsNone(saved)
+        self.assertFalse(Article.objects.filter(client=self.client_record).exists())
 
 
 class AdditionalProvidersTests(TestCase):
@@ -306,7 +392,8 @@ class AutomaticDiscoveryTests(TestCase):
     def setUp(self):
         self.client_record = Client.objects.create(
             name="Joao da Silva",
-            keywords="Joao Silva, mobilidade urbana",
+            name_variations="Joao Silva",
+            context_terms="mobilidade urbana",
         )
 
     def test_query_campaign_includes_client_and_keywords_without_duplicates(self):
@@ -563,6 +650,7 @@ class ClientAccessTests(TestCase):
         async_task_mock.assert_called_once_with(
             "newsclip.tasks.fetch_news_task",
             self.client_record.pk,
+            response.json()["task_id"] if response.json()["task_id"].isdigit() else 1,
             task_name=f"fetch-news-client-{self.client_record.pk}",
         )
 

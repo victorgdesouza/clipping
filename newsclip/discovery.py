@@ -19,7 +19,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from newsclip.models import Article, DiscoveryResult, DiscoveryRun, Source, SourceEndpoint
-from newsclip.utils import contains_excluded_term, save_article
+from newsclip.utils import (
+    build_client_search_queries,
+    audit_relevance_decision,
+    client_positive_terms,
+    contains_excluded_term,
+    save_article,
+    validate_article_candidate,
+)
 
 
 USER_AGENT = "ClippingDiscovery/1.0 (+monitoramento de imprensa)"
@@ -83,17 +90,7 @@ def is_public_http_url(value: str) -> bool:
 
 
 def build_discovery_queries(client, keywords: list[str], max_queries: int = 12) -> list[str]:
-    terms = []
-    for value in [client.name, *keywords]:
-        clean = re.sub(r"\s+", " ", value or "").strip()
-        if clean and normalize_text(clean) not in {normalize_text(item) for item in terms}:
-            terms.append(clean)
-
-    queries = []
-    for term in terms:
-        quoted = f'"{term}"' if " " in term else term
-        queries.extend([quoted, f"{quoted} noticias", f"{quoted} entrevista"])
-    return list(dict.fromkeys(queries))[:max_queries]
+    return build_client_search_queries(client, max_queries=max_queries)
 
 
 def relevance_score(title: str, description: str, terms: list[str]) -> int:
@@ -243,7 +240,7 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
         keywords,
         max_queries=getattr(settings, "BRAVE_SEARCH_MAX_QUERIES", 12),
     )
-    terms = list(dict.fromkeys([client.name, *keywords]))
+    terms = client_positive_terms(client)
     sources_to_profile = []
     errors = []
 
@@ -264,10 +261,27 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
     for query, results in search_results:
         for result in results:
             stats["results"] += 1
-            score = relevance_score(result.title, result.description, terms)
-            if contains_excluded_term(client, result.title, result.description):
-                score = 0
-            relevant = score >= getattr(settings, "DISCOVERY_MIN_RELEVANCE_SCORE", 35)
+            validation = validate_article_candidate(
+                client,
+                result.title,
+                result.description,
+                result.url,
+                domain_from_url(result.url),
+                provider=provider.name,
+            )
+            score = validation["score"]
+            relevant = validation["status"] == "ACCEPTED"
+            audit_relevance_decision(
+                client,
+                provider=provider.name,
+                query=query,
+                title=result.title,
+                url=result.url,
+                source=domain_from_url(result.url),
+                score=score,
+                reason=validation["reason"],
+                decision="APPROVED" if relevant else ("REVIEW" if validation["status"] == "REVIEW" else "REJECTED"),
+            )
             source = None
             source_created = False
             if relevant:
@@ -299,6 +313,7 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
                     source=source.name if source else domain_from_url(result.url),
                     content_text=result.description,
                     provider="BRAVE",
+                    query=query,
                 )
                 stats["articles"] += int(saved is not None)
 
@@ -496,7 +511,15 @@ def fetch_sitemap_endpoint(command, client, endpoint: SourceEndpoint, keywords: 
                 title = title or page.get("title", "")
                 description = page.get("description", "")
                 raw_date = raw_date or page.get("published_at")
-            if relevance_score(title, description, keywords) < getattr(settings, "DISCOVERY_MIN_RELEVANCE_SCORE", 35):
+            validation = validate_article_candidate(
+                client,
+                title,
+                description,
+                canonicalize_url(item["loc"]),
+                endpoint.source.name,
+                provider="SITEMAP",
+            )
+            if validation["status"] != "ACCEPTED":
                 continue
             saved = save_article(
                 client=client,
@@ -506,6 +529,7 @@ def fetch_sitemap_endpoint(command, client, endpoint: SourceEndpoint, keywords: 
                 source=endpoint.source.name,
                 content_text=description,
                 provider="SITEMAP",
+                query=endpoint.url,
             )
             saved_count += int(saved is not None)
 
