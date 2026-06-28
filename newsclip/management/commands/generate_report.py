@@ -13,7 +13,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from newsclip.models import Article, Client, GeneratedReport
-from newsclip.utils import deduplicate_articles_for_display
+from newsclip.utils import deduplicate_articles_for_display, revalidate_accepted_articles_for_client
 
 
 CONTENT_TYPES = {
@@ -44,6 +44,7 @@ class Command(BaseCommand):
             raise CommandError("O periodo deve ser um numero de dias ou 'all'.") from exc
 
         now = timezone.now()
+        revalidate_accepted_articles_for_client(client)
         articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
         if days is not None:
             articles = articles.filter(
@@ -158,12 +159,13 @@ class Command(BaseCommand):
         ]
         table_data = [[Paragraph(label, header_style) for label in ("Titulo", "Data", "Fonte", "Link")]]
         for row in data:
+            url = html.escape(str(row["Link"]), quote=True)
             table_data.append(
                 [
                     Paragraph(html.escape(str(row["Titulo"])), cell_style),
                     Paragraph(html.escape(str(row["Data"])), cell_style),
                     Paragraph(html.escape(str(row["Fonte"])), cell_style),
-                    Paragraph(html.escape(str(row["Link"])), cell_style),
+                    Paragraph(f'<link href="{url}">Abrir materia</link>', cell_style),
                 ]
             )
         table = Table(table_data, colWidths=[8.5 * cm, 3.2 * cm, 4.2 * cm, 10 * cm], repeatRows=1)
