@@ -245,18 +245,11 @@ def client_excluded_terms(client) -> list[str]:
     ]
 
 
-def contains_excluded_term(client, *values: str) -> bool:
-    searchable = normalize_match_text(" ".join(value or "" for value in values))
-    return any(normalize_match_text(term) in searchable for term in client_excluded_terms(client))
-
-
-def client_positive_terms(client) -> list[str]:
-    values = [getattr(client, "name", "")]
-    values.extend((getattr(client, "keywords", "") or "").split(","))
+def split_terms(value: str) -> list[str]:
     result = []
     seen = set()
-    for value in values:
-        clean = value.strip()
+    for item in re.split(r"[,\n;]+", value or ""):
+        clean = re.sub(r"\s+", " ", item).strip()
         normalized = normalize_match_text(clean)
         if clean and normalized not in seen:
             result.append(clean)
@@ -264,38 +257,225 @@ def client_positive_terms(client) -> list[str]:
     return result
 
 
-def validate_article_candidate(client, title: str, content: str, url: str, source: str) -> dict:
-    if contains_excluded_term(client, title, content):
-        return {"status": "REJECTED", "score": 0, "reason": "Contem termo excluido"}
-
-    title_normalized = normalize_match_text(title)
-    content_normalized = normalize_match_text(content)
-    title_matches = []
-    content_matches = []
-    for term in client_positive_terms(client):
-        normalized = normalize_match_text(term)
-        if not normalized:
+def social_handle_terms(client) -> list[str]:
+    handles = []
+    for field in ("instagram", "x", "youtube"):
+        raw = (getattr(client, field, "") or "").strip()
+        if not raw:
             continue
-        if normalized in title_normalized:
-            title_matches.append(term)
-        elif normalized in content_normalized:
-            content_matches.append(term)
+        handle = raw.rsplit("/", 1)[-1].strip().lstrip("@")
+        if handle:
+            handles.extend([handle, f"@{handle}"])
+    return list(dict.fromkeys(handles))
 
-    score = min(100, len(title_matches) * 70 + len(content_matches) * 35)
-    if canonicalize_article_url(url).startswith("https://"):
-        score = min(100, score + 5)
-    trusted_domains = [item.strip().casefold() for item in (getattr(client, "domains", "") or "").split(",") if item.strip()]
-    if any(domain in (url or "").casefold() for domain in trusted_domains):
+
+def client_identity_terms(client) -> list[str]:
+    values = [getattr(client, "name", "")]
+    values.extend(split_terms(getattr(client, "name_variations", "")))
+    values.extend(social_handle_terms(client))
+    result = []
+    seen = set()
+    for value in values:
+        clean = re.sub(r"\s+", " ", value or "").strip()
+        normalized = normalize_match_text(clean)
+        if clean and normalized not in seen:
+            result.append(clean)
+            seen.add(normalized)
+    return result
+
+
+def client_context_terms(client) -> list[str]:
+    values = []
+    values.extend(split_terms(getattr(client, "context_terms", "")))
+    # keywords permanece por compatibilidade, mas agora e contexto secundario.
+    values.extend(split_terms(getattr(client, "keywords", "")))
+    result = []
+    seen = {normalize_match_text(item) for item in client_identity_terms(client)}
+    for value in values:
+        normalized = normalize_match_text(value)
+        if value and normalized and normalized not in seen:
+            result.append(value)
+            seen.add(normalized)
+    return result
+
+
+def contains_excluded_term(client, *values: str) -> bool:
+    searchable = normalize_match_text(" ".join(value or "" for value in values))
+    return any(normalize_match_text(term) in searchable for term in client_excluded_terms(client))
+
+
+def client_positive_terms(client) -> list[str]:
+    return list(dict.fromkeys([*client_identity_terms(client), *client_context_terms(client)]))
+
+
+def build_client_search_queries(client, max_queries: int = 20) -> list[str]:
+    identities = client_identity_terms(client)
+    contexts = client_context_terms(client)
+    queries = []
+
+    def add(query: str):
+        clean = re.sub(r"\s+", " ", query or "").strip()
+        if clean and clean not in queries:
+            queries.append(clean)
+
+    for identity in identities:
+        quoted_identity = f'"{identity}"' if " " in identity else identity
+        add(quoted_identity)
+        add(f"{quoted_identity} noticias")
+        for context in contexts[:6]:
+            quoted_context = f'"{context}"' if " " in context else context
+            add(f"{quoted_identity} {quoted_context}")
+
+    # Nunca retorna apenas contexto solto. Contexto so aparece combinado com identidade.
+    return queries[:max_queries]
+
+
+def trusted_source_references(client) -> list[tuple[str, str]]:
+    references = []
+    for item in split_terms(getattr(client, "domains", "")):
+        parsed = urlsplit(item if "://" in item else f"https://{item}")
+        host = (parsed.hostname or item).casefold()
+        if host.startswith("www."):
+            host = host[4:]
+        path = (parsed.path or "").strip()
+        if path and path != "/":
+            path = "/" + path.strip("/")
+        references.append((host, path))
+    return references
+
+
+def is_trusted_source(client, url: str, source: str = "") -> bool:
+    parsed = urlsplit(url if "://" in (url or "") else f"https://{url or ''}")
+    url_host = (parsed.hostname or "").casefold()
+    if url_host.startswith("www."):
+        url_host = url_host[4:]
+    url_path = "/" + (parsed.path or "").strip("/")
+    source_norm = normalize_match_text(source)
+    for host, path in trusted_source_references(client):
+        if host and (url_host == host or source_norm == normalize_match_text(host)):
+            if not path or url_path.startswith(path):
+                return True
+    return False
+
+
+def is_official_social_source(client, url: str, source: str = "") -> bool:
+    searchable = normalize_match_text(f"{url} {source}")
+    return any(normalize_match_text(handle) in searchable for handle in social_handle_terms(client))
+
+
+def matched_terms(searchable: str, terms: list[str]) -> list[str]:
+    matches = []
+    searchable_norm = normalize_match_text(searchable)
+    for term in terms:
+        normalized = normalize_match_text(term)
+        if normalized and normalized in searchable_norm:
+            matches.append(term)
+    return matches
+
+
+def audit_relevance_decision(
+    client,
+    *,
+    provider: str = "",
+    query: str = "",
+    title: str = "",
+    url: str = "",
+    source: str = "",
+    score: int = 0,
+    reason: str = "",
+    decision: str = "REJECTED",
+):
+    try:
+        from newsclip.models import RelevanceAuditLog
+
+        RelevanceAuditLog.objects.create(
+            client=client,
+            provider=(provider or "")[:50],
+            query=query or "",
+            title=(title or "")[:500],
+            url=url or "",
+            source=(source or "")[:255],
+            relevance_score=max(0, min(int(score or 0), 100)),
+            relevance_reason=(reason or "")[:255],
+            decision=decision,
+        )
+    except Exception:
+        # Auditoria nunca pode derrubar a coleta.
+        pass
+
+
+def validate_article_candidate(
+    client,
+    title: str,
+    content: str,
+    url: str,
+    source: str,
+    provider: str = "",
+) -> dict:
+    if contains_excluded_term(client, title, content, url, source):
+        return {"status": "REJECTED", "score": 0, "reason": "Contem termo proibido"}
+
+    identity_terms = client_identity_terms(client)
+    context_terms = client_context_terms(client)
+    searchable = " ".join([title or "", content or "", url or "", source or ""])
+    identity_matches = matched_terms(searchable, identity_terms)
+    context_matches = matched_terms(searchable, context_terms)
+    official_source = is_official_social_source(client, url, source)
+    trusted_source = is_trusted_source(client, url, source)
+
+    full_name_norm = normalize_match_text(getattr(client, "name", ""))
+    searchable_norm = normalize_match_text(searchable)
+    score = 0
+    reason = "Sem identidade forte do cliente"
+
+    if official_source:
+        score = 100
+        reason = "Origem oficial do cliente"
+    elif full_name_norm and full_name_norm in searchable_norm:
+        score = 100
+        reason = f"Nome oficial encontrado: {getattr(client, 'name', '')}"
+    elif identity_matches and context_matches:
+        score = 85
+        reason = f"Identidade + contexto: {identity_matches[0]} + {context_matches[0]}"
+    elif identity_matches:
+        score = 70
+        reason = f"Identidade encontrada: {identity_matches[0]}"
+    elif trusted_source and len(context_matches) >= 2:
+        score = 70
+        reason = f"Fonte confiavel com contexto forte: {', '.join(context_matches[:2])}"
+    elif len(context_matches) >= 2:
+        normalized_matches = {normalize_match_text(item) for item in context_matches}
+        person_context = any("paulo emilio" in item for item in normalized_matches)
+        event_context = any(
+            item in normalized_matches
+            for item in {"rodeio", "evento", "touro", "peao", "arena", "ingressos", "show", "festival"}
+        )
+        if person_context and event_context:
+            score = 55
+            reason = f"Contexto ambiguo sem identidade: {', '.join(context_matches[:2])}"
+        else:
+            score = 35
+            reason = f"Contexto sem identidade forte: {', '.join(context_matches[:2])}"
+    elif context_matches:
+        score = 35
+        reason = f"Contexto isolado insuficiente: {context_matches[0]}"
+
+    if trusted_source and score >= 60:
         score = min(100, score + 10)
+        reason = f"{reason}; fonte confiavel"
 
-    if title_matches:
-        reason = f"Termo no titulo: {title_matches[0]}"
-    elif content_matches:
-        reason = f"Termo no conteudo: {content_matches[0]}"
+    if canonicalize_article_url(url).startswith("https://") and score >= 70:
+        score = min(100, score + 3)
+
+    if score >= 70:
+        status = "ACCEPTED"
+    elif score >= 40:
+        status = "REVIEW"
     else:
-        reason = "Sem termo explicito no titulo ou resumo"
+        status = "REJECTED"
+
     return {
-        "status": "ACCEPTED" if score >= 35 else "REVIEW",
+        "status": status,
         "score": score,
         "reason": reason,
     }
@@ -305,7 +485,7 @@ def validate_article_candidate(client, title: str, content: str, url: str, sourc
 # 4) Salvamento de artigos no banco
 # —————————————————————————————————————————
 
-def save_article(client, title, url, raw_date, source, content_text=None, provider="OTHER"):
+def save_article(client, title, url, raw_date, source, content_text=None, provider="OTHER", query=""):
     """
     Salva um artigo no banco de dados e calcula seu search_vector.
     """
@@ -325,7 +505,23 @@ def save_article(client, title, url, raw_date, source, content_text=None, provid
     processed_url = canonicalize_article_url(url)
 
     validation = validate_article_candidate(
-        client, processed_title, content_text or "", processed_url, processed_source
+        client, processed_title, content_text or "", processed_url, processed_source, provider=provider
+    )
+    decision = (
+        "APPROVED"
+        if validation["status"] == "ACCEPTED"
+        else ("REVIEW" if validation["status"] == "REVIEW" else "REJECTED")
+    )
+    audit_relevance_decision(
+        client,
+        provider=provider,
+        query=query,
+        title=processed_title,
+        url=processed_url,
+        source=processed_source,
+        score=validation["score"],
+        reason=validation["reason"],
+        decision=decision,
     )
     if validation["status"] == "REJECTED":
         return None

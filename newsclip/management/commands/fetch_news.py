@@ -24,7 +24,7 @@ from django.db import IntegrityError
 from newsclip.discovery import discover_client_sources, fetch_sitemap_endpoint
 from newsclip.models import Client, Article, Source, SourceEndpoint, FetchLog
 from newsclip.providers import fetch_gdelt, fetch_youtube
-from newsclip.utils import save_article
+from newsclip.utils import build_client_search_queries, client_context_terms, client_positive_terms, save_article
 
 from newsapi import NewsApiClient # type: ignore
 import re
@@ -129,16 +129,19 @@ class Command(BaseCommand):
 
         for client in clients:
             self.log(f"--- Processando cliente: {client.name} ---", client=client)
-            kws_raw = client.keywords or ""
-            # Preserve a grafia original nas APIs (acentos melhoram a precisão),
-            # normalizando apenas no momento da comparação local.
-            kws = list(dict.fromkeys(kw.strip() for kw in kws_raw.split(",") if kw.strip()))
+            # Termos separados por função: identidade forte fica no perfil do cliente;
+            # termos complementares/legados entram apenas como contexto.
+            kws = client_context_terms(client)
+            search_queries = build_client_search_queries(
+                client,
+                max_queries=max(MAX_GOOGLE_RSS_QUERIES, 20),
+            )
 
-            if not kws:
-                self.log(f"Cliente {client.name}: sem keywords definidas. Pulando.", level='WARNING', client=client)
+            if not search_queries:
+                self.log(f"Cliente {client.name}: sem identidade de busca definida. Pulando.", level='WARNING', client=client)
                 continue
 
-            match_terms = list(dict.fromkeys([client.name, *kws]))
+            match_terms = client_positive_terms(client)
 
             discovery_stats = discover_client_sources(client, kws, log=self.log, force=force_run)
             if discovery_stats["queries"]:
@@ -157,17 +160,17 @@ class Command(BaseCommand):
             with ThreadPoolExecutor(max_workers=5) as executor:
                 # 1. APIs Pagas (NewsAPI, NewsData)
                 if NEWSAPI_KEY or force_run:
-                    futures_map[executor.submit(self.fetch_newsapi, client, kws, since_dt, utc_now)] = "NewsAPI"
+                    futures_map[executor.submit(self.fetch_newsapi, client, search_queries, since_dt, utc_now)] = "NewsAPI"
                 else:
                     self.log(f"NewsAPI KEY não configurada. Pulando.", level='WARNING', client=client)
 
                 if NEWSDATA_KEY or force_run:
-                    futures_map[executor.submit(self.fetch_newsdata, client, kws, since_dt, utc_now)] = "NewsData"
+                    futures_map[executor.submit(self.fetch_newsdata, client, search_queries, since_dt, utc_now)] = "NewsData"
                 else:
                     self.log(f"NewsData KEY não configurada. Pulando.", level='WARNING', client=client)
                 
                 # 2. Google RSS (Busca Dinâmica)
-                futures_map[executor.submit(self.fetch_google_rss, client, kws, since_dt)] = "GoogleRSS"
+                futures_map[executor.submit(self.fetch_google_rss, client, search_queries, since_dt)] = "GoogleRSS"
 
                 if getattr(settings, "GDELT_ENABLED", True):
                     futures_map[executor.submit(fetch_gdelt, client, kws, since_dt, self.log)] = "GDELT"
@@ -256,6 +259,7 @@ class Command(BaseCommand):
                             client=client, title=title, url=url, raw_date=item.get('pubDate'),
                             source=item.get('source_id') or "NewsData.io", content_text=content_text,
                             provider="NEWSDATA",
+                            query=query,
                         )
                         count_saved += int(created is not None)
 
@@ -279,7 +283,7 @@ class Command(BaseCommand):
             # e aumentam a cobertura de termos com volumes muito diferentes.
             for keyword in keywords_list[:MAX_GOOGLE_RSS_QUERIES]:
                 try:
-                    query_string = f'"{keyword}" when:{LOOKBACK_DAYS}d'
+                    query_string = f'{keyword} when:{LOOKBACK_DAYS}d'
                     rss_url = f"https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-BR&q={quote_plus(query_string)}"
                     response = requests.get(rss_url, headers=headers, timeout=30)
                     response.raise_for_status()
@@ -312,6 +316,7 @@ class Command(BaseCommand):
                         source=entry.get('source', {}).get('title') or "Google News",
                         content_text=content_text,
                         provider="GOOGLE_RSS",
+                        query=keyword,
                     )
                     count_saved += int(created is not None)
         except Exception as e:
@@ -363,7 +368,8 @@ class Command(BaseCommand):
                 source_name = source_obj.name
                 created = save_article(client=client, title=title, url=url,
                                        raw_date=publication_date_aware.isoformat() if publication_date_aware else None,
-                                       source=source_name, content_text=content_text, provider="RSS")
+                                       source=source_name, content_text=content_text, provider="RSS",
+                                       query=feed_url)
                 count_saved += int(created is not None)
         except Exception as e:
             self.log(f"Erro RSS {source_obj.name}: {e}", level='ERROR', client=client, source=source_obj)
@@ -414,7 +420,8 @@ class Command(BaseCommand):
                 article_url = urljoin(source_obj.url, article_url)
                 
                 created = save_article(client=client, title=title, url=article_url, raw_date=None,
-                                       source=source_obj.name, content_text=None, provider="SCRAPE")
+                                       source=source_obj.name, content_text=None, provider="SCRAPE",
+                                       query=source_obj.url)
                 count_saved += int(created is not None)
 
         except Exception as e:
@@ -452,6 +459,7 @@ class Command(BaseCommand):
                             client=client, title=title, url=url, raw_date=article_data.get('publishedAt'),
                             source=source_name, content_text=content_text,
                             provider="NEWSAPI",
+                            query=query_string,
                         )
                         count_saved += int(created is not None)
 

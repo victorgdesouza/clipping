@@ -21,7 +21,7 @@ from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 from django_q.tasks import async_task
 
 from .forms import ClientForm, ReportForm
-from .models import Article, Client, DiscoveryRun, GeneratedReport
+from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob
 from .utils import deduplicate_articles_for_display
 
 
@@ -126,7 +126,7 @@ class BuscarTodasNoticiasView(LoginRequiredMixin, ListView):
 
         for cliente in context[self.context_object_name]:
             artigos_unicos = deduplicate_articles_for_display(
-                Article.objects.filter(client=cliente, excluded=False).order_by("-published_at", "-id")
+                Article.objects.filter(client=cliente, excluded=False, validation_status="ACCEPTED").order_by("-published_at", "-id")
             )
             clientes_noticias_display.append(
                 {
@@ -146,7 +146,7 @@ def noticias_cliente_json(request, pk):
         return HttpResponseForbidden()
 
     artigos = deduplicate_articles_for_display(
-        Article.objects.filter(client=client, excluded=False).order_by("-published_at", "-id")
+        Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED").order_by("-published_at", "-id")
     )
     dados = [
         {
@@ -171,7 +171,7 @@ def dashboard(request):
     active_providers = set()
 
     for client in clients:
-        articles = Article.objects.filter(client=client, excluded=False)
+        articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
         metrics = articles.aggregate(
             total=Count("id"),
             recent=Count("id", filter=Q(published_at__gte=since) | Q(created_at__gte=since)),
@@ -228,7 +228,7 @@ def client_news(request, client_id):
     source_filter = request.GET.get("source", "")
     current_search_query = request.GET.get("q", "")
 
-    articles_qs = Article.objects.filter(client=client, excluded=False)
+    articles_qs = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
 
     if source_filter:
         articles_qs = articles_qs.filter(source__iexact=source_filter)
@@ -341,13 +341,36 @@ def fetch_news_view(request, client_id):
     if not user_can_access_client(request.user, client):
         return HttpResponseForbidden("Voce nao tem permissao para buscar noticias para este cliente.")
 
+    active_job = (
+        NewsFetchJob.objects.filter(client=client, status__in=["queued", "running"])
+        .order_by("-created_at")
+        .first()
+    )
+    if active_job:
+        status_url = reverse("check_task_status", args=[active_job.task_id or active_job.pk])
+        payload = {
+            "status": active_job.status,
+            "message": "Ja existe uma busca em andamento para este cliente.",
+            "task_id": active_job.task_id or str(active_job.pk),
+            "status_url": status_url,
+        }
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse(payload, status=202)
+        messages.warning(request, payload["message"])
+        return redirect("client_news", client_id=client_id)
+
+    job = NewsFetchJob.objects.create(client=client, status="queued")
     task_id = async_task(
         "newsclip.tasks.fetch_news_task",
         client_id,
+        job.pk,
         task_name=f"fetch-news-client-{client_id}",
     )
+    job.task_id = str(task_id)
+    job.save(update_fields=["task_id", "updated_at"])
     allowed_tasks = request.session.get("news_fetch_tasks", {})
     allowed_tasks[str(task_id)] = client_id
+    allowed_tasks[str(job.pk)] = client_id
     request.session["news_fetch_tasks"] = allowed_tasks
 
     message_text = "Busca iniciada em segundo plano."
@@ -379,6 +402,26 @@ def check_task_status(request, task_id):
     if not user_can_access_client(request.user, client):
         return HttpResponseForbidden()
 
+    job_filter = Q(task_id=str(task_id))
+    if str(task_id).isdigit():
+        job_filter |= Q(pk=int(task_id))
+    job = NewsFetchJob.objects.filter(job_filter, client=client).first()
+    if job:
+        if job.status in {"queued", "running"} and job.created_at < timezone.now() - timedelta(minutes=45):
+            job.status = "failed"
+            job.finished_at = timezone.now()
+            job.error_message = "Tempo limite excedido ao buscar noticias."
+            job.save(update_fields=["status", "finished_at", "error_message", "updated_at"])
+        return JsonResponse(
+            {
+                "success": job.status == "completed",
+                "result": job.result_message or job.error_message,
+                "started": job.started_at,
+                "stopped": job.finished_at,
+                "status": job.status,
+            }
+        )
+
     try:
         task = Task.objects.get(id=task_id)
         return JsonResponse(
@@ -387,11 +430,11 @@ def check_task_status(request, task_id):
                 "result": task.result,
                 "started": task.started,
                 "stopped": task.stopped,
-                "status": "DONE" if task.stopped else "RUNNING",
+                "status": "completed" if task.success and task.stopped else ("failed" if task.stopped else "running"),
             }
         )
     except Task.DoesNotExist:
-        return JsonResponse({"status": "PENDING"})
+        return JsonResponse({"status": "queued"})
 
 
 @login_required

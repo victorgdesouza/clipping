@@ -44,7 +44,7 @@ class Command(BaseCommand):
             raise CommandError("O periodo deve ser um numero de dias ou 'all'.") from exc
 
         now = timezone.now()
-        articles = Article.objects.filter(client=client, excluded=False)
+        articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
         if days is not None:
             articles = articles.filter(
                 published_at__gte=now - relativedelta(days=days),

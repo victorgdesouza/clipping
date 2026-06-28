@@ -53,8 +53,12 @@
           return response.json();
         })
         .then(data => {
-          if (data.status === 'DONE') {
+          if (data.status === 'DONE' || data.status === 'completed') {
             finishFetch(data.result || (data.success ? 'Busca finalizada.' : 'A busca falhou.'), !data.success);
+            return;
+          }
+          if (data.status === 'failed' || data.status === 'cancelled') {
+            finishFetch(data.result || 'A busca foi encerrada sem concluir.', true);
             return;
           }
           pollTimer = setTimeout(() => pollFetch(statusUrl), 3000);
@@ -81,7 +85,7 @@
           .then(data => {
             overlay.style.display = 'none';
             btnFetch.disabled = false;
-            if (data.status === 'queued') {
+            if (data.status === 'queued' || data.status === 'running') {
               overlay.style.display = 'flex';
               btnFetch.disabled = true;
               pollFetch(data.status_url);

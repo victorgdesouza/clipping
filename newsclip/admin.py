@@ -1,5 +1,15 @@
 from django.contrib import admin
-from .models import Article, Client, DiscoveryResult, DiscoveryRun, FetchLog, Source, SourceEndpoint
+from .models import (
+    Article,
+    Client,
+    DiscoveryResult,
+    DiscoveryRun,
+    FetchLog,
+    NewsFetchJob,
+    RelevanceAuditLog,
+    Source,
+    SourceEndpoint,
+)
 
 
 class SourceEndpointInline(admin.TabularInline):
@@ -40,11 +50,28 @@ class FetchLogAdmin(admin.ModelAdmin):
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     list_display = ("name",)
+    search_fields = ("name", "name_variations", "context_terms", "keywords")
     filter_horizontal = ("users",)
 
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
-    list_display = ("title", "client", "published_at", "source")
-    list_filter = ("client",)
+    list_display = ("title", "client", "published_at", "source", "validation_status", "relevance_score")
+    list_filter = ("client", "validation_status", "provider")
     search_fields = ("title",)
+
+
+@admin.register(RelevanceAuditLog)
+class RelevanceAuditLogAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "client", "decision", "relevance_score", "provider", "title")
+    list_filter = ("decision", "provider", "created_at", "client")
+    search_fields = ("title", "url", "query", "relevance_reason")
+    readonly_fields = ("created_at",)
+
+
+@admin.register(NewsFetchJob)
+class NewsFetchJobAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "client", "status", "started_at", "finished_at", "task_id")
+    list_filter = ("status", "created_at", "client")
+    search_fields = ("task_id", "error_message", "result_message")
+    readonly_fields = ("created_at", "updated_at")
 

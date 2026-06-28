@@ -6,7 +6,7 @@
   <div>
     <p class="page-eyebrow">Cliente</p>
     <h1>{% if form.instance.pk %}Editar cliente{% else %}Cadastrar cliente{% endif %}</h1>
-    <p>Defina termos de busca, fontes confiaveis e perfis sociais para o monitoramento.</p>
+    <p>Defina identidade, contexto, fontes confiaveis e perfis sociais para o monitoramento.</p>
   </div>
   <a href="{% url 'dashboard' %}" class="button button-ghost">Voltar</a>
 </section>
@@ -25,7 +25,21 @@
     </div>
 
     <div class="form-group form-group-wide">
-      <label for="{{ form.keywords.id_for_label }}">Palavras-chave</label>
+      <label for="{{ form.name_variations.id_for_label }}">Variacoes do nome</label>
+      {{ form.name_variations }}
+      <span class="form-help-text">{{ form.name_variations.help_text }}</span>
+      {{ form.name_variations.errors }}
+    </div>
+
+    <div class="form-group form-group-wide">
+      <label for="{{ form.context_terms.id_for_label }}">Termos de contexto</label>
+      {{ form.context_terms }}
+      <span class="form-help-text">{{ form.context_terms.help_text }}</span>
+      {{ form.context_terms.errors }}
+    </div>
+
+    <div class="form-group form-group-wide">
+      <label for="{{ form.keywords.id_for_label }}">Termos complementares</label>
       {{ form.keywords }}
       <span class="form-help-text">{{ form.keywords.help_text }}</span>
       {{ form.keywords.errors }}
