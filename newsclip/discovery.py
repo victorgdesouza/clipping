@@ -199,6 +199,59 @@ def _source_for_result(result: SearchResult, provider: str) -> tuple[Source, boo
     return source, created
 
 
+def _source_relevant_evidence(source: Source) -> tuple[int, int]:
+    relevant_results = DiscoveryResult.objects.filter(source=source, is_relevant=True)
+    return relevant_results.count(), relevant_results.values("client_id").distinct().count()
+
+
+def _source_has_reusable_endpoint(source: Source) -> bool:
+    return SourceEndpoint.objects.filter(
+        source=source,
+        is_active=True,
+        endpoint_type__in=["RSS", "SITEMAP", "NEWS_SITEMAP"],
+    ).exists()
+
+
+def maybe_promote_source(source: Source) -> bool:
+    """Ativa uma fonte descoberta quando ela já tem evidência suficiente.
+
+    A fonte só entra no motor global quando:
+    - foi descoberta automaticamente;
+    - não está bloqueada/descartada;
+    - tem RSS/sitemap reutilizável;
+    - tem confiança e resultados relevantes mínimos.
+    """
+    if not getattr(settings, "DISCOVERY_AUTO_ACTIVATE_SOURCES", True):
+        return False
+
+    source.refresh_from_db()
+    if source.is_active and source.status == "ACTIVE":
+        return False
+    if not source.discovered_automatically:
+        return False
+    if source.status in {"BLOCKED", "DISCARDED"}:
+        return False
+    if not _source_has_reusable_endpoint(source):
+        return False
+
+    relevant_count, distinct_clients = _source_relevant_evidence(source)
+    min_relevant = getattr(settings, "DISCOVERY_AUTO_ACTIVATE_MIN_RELEVANT_RESULTS", 2)
+    min_clients = getattr(settings, "DISCOVERY_AUTO_ACTIVATE_MIN_CLIENTS", 1)
+    min_confidence = getattr(settings, "DISCOVERY_AUTO_ACTIVATE_MIN_CONFIDENCE", 50)
+
+    if relevant_count < min_relevant:
+        return False
+    if distinct_clients < min_clients:
+        return False
+    if source.confidence_score < min_confidence:
+        return False
+
+    source.is_active = True
+    source.status = "ACTIVE"
+    source.save(update_fields=["is_active", "status"])
+    return True
+
+
 def discover_client_sources(client, keywords: list[str], log=None, force: bool = False) -> dict[str, int]:
     stats = {
         "queries": 0,
@@ -327,6 +380,13 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
             try:
                 if future.result():
                     stats["profiled"] += 1
+                    if maybe_promote_source(source) and log:
+                        log(
+                            f"Fonte promovida automaticamente: {source.domain or source.name}",
+                            level="SUCCESS",
+                            client=client,
+                            source=source,
+                        )
             except requests.RequestException as exc:
                 errors.append(str(exc))
                 if log:
@@ -408,6 +468,7 @@ def profile_source(source: Source) -> int:
             source.status = "VERIFIED"
             source.confidence_score = max(source.confidence_score, 50)
             source.save(update_fields=["status", "confidence_score"])
+    maybe_promote_source(source)
     return created
 
 

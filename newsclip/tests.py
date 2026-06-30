@@ -14,6 +14,7 @@ from newsclip.discovery import (
     build_discovery_queries,
     discover_client_sources,
     fetch_sitemap_endpoint,
+    maybe_promote_source,
     parse_sitemap,
     profile_source,
 )
@@ -539,6 +540,89 @@ class AutomaticDiscoveryTests(TestCase):
             {"RSS", "NEWS_SITEMAP"},
         )
 
+    @override_settings(
+        DISCOVERY_AUTO_ACTIVATE_SOURCES=True,
+        DISCOVERY_AUTO_ACTIVATE_MIN_RELEVANT_RESULTS=2,
+        DISCOVERY_AUTO_ACTIVATE_MIN_CLIENTS=1,
+        DISCOVERY_AUTO_ACTIVATE_MIN_CONFIDENCE=50,
+    )
+    def test_reusable_discovered_source_is_promoted_to_global_active_source(self):
+        source = Source.objects.create(
+            name="Jornal Reutilizavel",
+            domain="jornal-reutilizavel.example",
+            url="https://jornal-reutilizavel.example/",
+            source_type="DISCOVERED",
+            discovered_automatically=True,
+            status="VERIFIED",
+            is_active=False,
+            confidence_score=60,
+        )
+        SourceEndpoint.objects.create(
+            source=source,
+            endpoint_type="RSS",
+            url="https://jornal-reutilizavel.example/feed.xml",
+            is_active=True,
+        )
+        for index in range(2):
+            DiscoveryResult.objects.create(
+                client=self.client_record,
+                source=source,
+                provider="BRAVE",
+                query='"Joao da Silva"',
+                title=f"Joao da Silva noticia relevante {index}",
+                url=f"https://jornal-reutilizavel.example/noticia-{index}",
+                relevance_score=100,
+                is_relevant=True,
+            )
+
+        promoted = maybe_promote_source(source)
+
+        source.refresh_from_db()
+        self.assertTrue(promoted)
+        self.assertTrue(source.is_active)
+        self.assertEqual(source.status, "ACTIVE")
+
+    @override_settings(
+        DISCOVERY_AUTO_ACTIVATE_SOURCES=True,
+        DISCOVERY_AUTO_ACTIVATE_MIN_RELEVANT_RESULTS=2,
+        DISCOVERY_AUTO_ACTIVATE_MIN_CLIENTS=1,
+        DISCOVERY_AUTO_ACTIVATE_MIN_CONFIDENCE=50,
+    )
+    def test_discovered_source_without_enough_evidence_stays_inactive(self):
+        source = Source.objects.create(
+            name="Jornal Candidato",
+            domain="jornal-candidato.example",
+            url="https://jornal-candidato.example/",
+            source_type="DISCOVERED",
+            discovered_automatically=True,
+            status="VERIFIED",
+            is_active=False,
+            confidence_score=60,
+        )
+        SourceEndpoint.objects.create(
+            source=source,
+            endpoint_type="RSS",
+            url="https://jornal-candidato.example/feed.xml",
+            is_active=True,
+        )
+        DiscoveryResult.objects.create(
+            client=self.client_record,
+            source=source,
+            provider="BRAVE",
+            query='"Joao da Silva"',
+            title="Joao da Silva noticia relevante",
+            url="https://jornal-candidato.example/noticia",
+            relevance_score=100,
+            is_relevant=True,
+        )
+
+        promoted = maybe_promote_source(source)
+
+        source.refresh_from_db()
+        self.assertFalse(promoted)
+        self.assertFalse(source.is_active)
+        self.assertEqual(source.status, "VERIFIED")
+
     def test_news_sitemap_parser_extracts_title_and_date(self):
         xml = """<?xml version="1.0" encoding="UTF-8"?>
         <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -665,6 +749,62 @@ class ClientAccessTests(TestCase):
         self.assertNotContains(response, "<th>Fonte</th>", html=True)
         self.assertNotContains(response, "<th>Qualidade</th>", html=True)
         self.assertNotContains(response, "Validada")
+
+    def test_monitored_sources_requires_login(self):
+        response = self.client.get(reverse("monitored_sources"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login/", response["Location"])
+
+    def test_logged_user_can_consult_active_and_verified_sources(self):
+        active_source = Source.objects.create(
+            name="Jornal Ativo",
+            domain="jornalativo.example",
+            url="https://jornalativo.example/",
+            source_type="DISCOVERED",
+            status="ACTIVE",
+            is_active=True,
+            discovered_automatically=True,
+            discovery_count=3,
+        )
+        SourceEndpoint.objects.create(
+            source=active_source,
+            endpoint_type="RSS",
+            url="https://jornalativo.example/feed.xml",
+            is_active=True,
+        )
+        Source.objects.create(
+            name="Jornal Verificado",
+            domain="jornalverificado.example",
+            url="https://jornalverificado.example/",
+            source_type="DISCOVERED",
+            status="VERIFIED",
+            is_active=False,
+            discovered_automatically=True,
+            discovery_count=1,
+        )
+        Source.objects.create(
+            name="Jornal Candidato",
+            domain="jornalcandidato.example",
+            url="https://jornalcandidato.example/",
+            source_type="DISCOVERED",
+            status="CANDIDATE",
+            is_active=False,
+            discovered_automatically=True,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("monitored_sources"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Fontes monitoradas")
+        self.assertContains(response, "Jornal Ativo")
+        self.assertContains(response, "Ativa nas buscas")
+        self.assertContains(response, "https://jornalativo.example/")
+        self.assertContains(response, "RSS/Atom")
+        self.assertContains(response, "Jornal Verificado")
+        self.assertContains(response, "Verificada")
+        self.assertNotContains(response, "Jornal Candidato")
 
     @patch("newsclip.views.async_task", return_value="task-123")
     def test_owner_starts_fetch_in_background(self, async_task_mock):

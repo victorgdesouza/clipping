@@ -21,7 +21,7 @@ from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 from django_q.tasks import async_task
 
 from .forms import ClientForm, ReportForm
-from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob
+from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob, Source
 from .utils import deduplicate_articles_for_display, revalidate_accepted_articles_for_client
 
 
@@ -213,6 +213,54 @@ def dashboard(request):
                 "providers": len(active_providers),
                 "clients": len(clients),
             },
+        },
+    )
+
+
+@login_required
+def monitored_sources(request):
+    status_filter = request.GET.get("status", "")
+    query = (request.GET.get("q") or "").strip()
+
+    sources = (
+        Source.objects.filter(Q(is_active=True) | Q(status__in=["ACTIVE", "VERIFIED"]))
+        .exclude(status__in=["BLOCKED", "DISCARDED"])
+        .prefetch_related("endpoints")
+        .order_by("-is_active", "-last_discovered_at", "name")
+    )
+
+    if status_filter == "active":
+        sources = sources.filter(is_active=True)
+    elif status_filter == "verified":
+        sources = sources.filter(is_active=False, status="VERIFIED")
+
+    if query:
+        sources = sources.filter(
+            Q(name__icontains=query)
+            | Q(domain__icontains=query)
+            | Q(url__icontains=query)
+        )
+
+    source_items = []
+    for source in sources[:300]:
+        endpoints = list(source.endpoints.filter(is_active=True).order_by("endpoint_type", "url"))
+        source_items.append(
+            {
+                "source": source,
+                "status_label": "Ativa nas buscas" if source.is_active else "Verificada",
+                "status_class": "quality-accepted" if source.is_active else "quality-review",
+                "endpoints": endpoints,
+            }
+        )
+
+    return render(
+        request,
+        "newsclip/monitored_sources.html",
+        {
+            "source_items": source_items,
+            "status_filter": status_filter,
+            "query": query,
+            "total_sources": len(source_items),
         },
     )
 
