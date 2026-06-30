@@ -50,6 +50,8 @@ services:
         sync: false
       - key: YOUTUBE_MAX_QUERIES
         value: "2"
+      - key: GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES
+        value: "24"
       - key: GDELT_ENABLED
         value: "true"
       - key: GDELT_MAX_QUERIES

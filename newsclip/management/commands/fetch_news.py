@@ -24,7 +24,14 @@ from django.db import IntegrityError
 from newsclip.discovery import discover_client_sources, fetch_sitemap_endpoint
 from newsclip.models import Client, Article, Source, SourceEndpoint, FetchLog
 from newsclip.providers import fetch_gdelt, fetch_youtube
-from newsclip.utils import build_client_search_queries, client_context_terms, client_positive_terms, save_article
+from newsclip.source_seeds import ESSENTIAL_NEWS_SOURCES
+from newsclip.utils import (
+    build_client_search_queries,
+    build_essential_source_queries,
+    client_context_terms,
+    client_positive_terms,
+    save_article,
+)
 
 from newsapi import NewsApiClient # type: ignore
 import re
@@ -34,6 +41,7 @@ MAX_NEWSAPI_DAYS = 30
 LOOKBACK_DAYS = 90
 MAX_API_PAGES = config("NEWS_FETCH_MAX_PAGES", default=5, cast=int)
 MAX_GOOGLE_RSS_QUERIES = config("GOOGLE_RSS_MAX_QUERIES", default=20, cast=int)
+MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES", default=24, cast=int)
 
 # Variáveis de API lidas do .env ou ambiente
 NEWSDATA_KEY = config("NEWSDATA_API_KEY", default=None)
@@ -83,6 +91,41 @@ def build_query_batches(keywords, max_length):
         batches.append(" OR ".join(current))
     return batches
 
+
+def ensure_essential_news_sources():
+    for seed in ESSENTIAL_NEWS_SOURCES:
+        url = seed["url"]
+        domain = (urlparse(url).hostname or seed.get("site", "")).removeprefix("www.")
+        source, _created = Source.objects.get_or_create(
+            url=url,
+            defaults={
+                "name": seed["name"],
+                "domain": domain,
+                "source_type": "DISCOVERED",
+                "is_active": True,
+                "status": "ACTIVE",
+                "discovered_automatically": False,
+                "discovery_provider": "SEED",
+                "confidence_score": 100,
+            },
+        )
+        if source.status in {"BLOCKED", "DISCARDED"}:
+            continue
+        updates = {}
+        if source.name != seed["name"]:
+            updates["name"] = seed["name"]
+        if not source.domain:
+            updates["domain"] = domain
+        if not source.is_active:
+            updates["is_active"] = True
+        if source.status != "ACTIVE":
+            updates["status"] = "ACTIVE"
+        if source.confidence_score < 90:
+            updates["confidence_score"] = 100
+        if updates:
+            Source.objects.filter(pk=source.pk).update(**updates)
+
+
 class Command(BaseCommand):
     help = "Busca notícias para cada cliente e salva as novas entradas"
 
@@ -123,6 +166,7 @@ class Command(BaseCommand):
             self.log("Nenhum cliente encontrado para processar.", level='WARNING')
             return
 
+        ensure_essential_news_sources()
         utc_now = dj_timezone.now()
         since_dt = utc_now - timedelta(days=LOOKBACK_DAYS)
         overall_total = 0
@@ -135,6 +179,10 @@ class Command(BaseCommand):
             search_queries = build_client_search_queries(
                 client,
                 max_queries=max(MAX_GOOGLE_RSS_QUERIES, 20),
+            )
+            essential_source_queries = build_essential_source_queries(
+                client,
+                max_sources=max(1, MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES),
             )
 
             if not search_queries:
@@ -170,7 +218,11 @@ class Command(BaseCommand):
                     self.log(f"NewsData KEY não configurada. Pulando.", level='WARNING', client=client)
                 
                 # 2. Google RSS (Busca Dinâmica)
-                futures_map[executor.submit(self.fetch_google_rss, client, search_queries, since_dt)] = "GoogleRSS"
+                google_rss_queries = [
+                    *search_queries[:MAX_GOOGLE_RSS_QUERIES],
+                    *essential_source_queries[:MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES],
+                ]
+                futures_map[executor.submit(self.fetch_google_rss, client, google_rss_queries, since_dt)] = "GoogleRSS"
 
                 if getattr(settings, "GDELT_ENABLED", True):
                     futures_map[executor.submit(fetch_gdelt, client, kws, since_dt, self.log)] = "GDELT"
