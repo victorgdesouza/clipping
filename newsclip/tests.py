@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from feedparser import FeedParserDict
 
-from newsclip.management.commands.fetch_news import Command
+from newsclip.management.commands.fetch_news import Command, ensure_essential_news_sources
 from newsclip.discovery import (
     build_discovery_queries,
     discover_client_sources,
@@ -22,7 +22,12 @@ from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, Gene
 from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.signals import update_search_vector
 from newsclip.templatetags.source_extras import domain
-from newsclip.utils import deduplicate_articles_for_display, save_article, validate_article_candidate
+from newsclip.utils import (
+    build_essential_source_queries,
+    deduplicate_articles_for_display,
+    save_article,
+    validate_article_candidate,
+)
 from newsclip.views import check_task_status
 
 
@@ -153,6 +158,22 @@ class NewsCollectionRecallTests(TestCase):
         )
 
         self.assertEqual(get_mock.call_count, 2)
+
+    def test_essential_source_queries_include_major_and_regional_portals(self):
+        queries = build_essential_source_queries(self.client_a, max_sources=24)
+        joined = "\n".join(queries)
+
+        self.assertIn('site:g1.globo.com', joined)
+        self.assertIn('site:g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba', joined)
+        self.assertIn('site:record.r7.com/record-rio-preto', joined)
+        self.assertIn('site:band.uol.com.br', joined)
+
+    def test_ensure_essential_sources_registers_verified_sources(self):
+        ensure_essential_news_sources()
+
+        self.assertTrue(Source.objects.filter(name="G1", is_active=True, status="ACTIVE").exists())
+        self.assertTrue(Source.objects.filter(name="Record Rio Preto", is_active=True, status="ACTIVE").exists())
+        self.assertTrue(Source.objects.filter(name="Band Paulista", is_active=True, status="ACTIVE").exists())
 
 
 class SearchVectorSignalTests(TestCase):

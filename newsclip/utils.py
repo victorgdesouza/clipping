@@ -19,6 +19,7 @@ from django.db import connection
 from django.db.models import Value # Para tratar campos potencialmente nulos no SearchVector
 
 from newsclip.models import Article
+from newsclip.source_seeds import ESSENTIAL_NEWS_SOURCES
 
 
 # —————————————————————————————————————————
@@ -344,6 +345,32 @@ def build_client_search_queries(client, max_queries: int = 20) -> list[str]:
 
     # Nunca retorna apenas contexto solto. Contexto so aparece combinado com identidade.
     return queries[:max_queries]
+
+
+def build_essential_source_queries(
+    client,
+    max_sources: int = 24,
+    max_identities: int = 2,
+) -> list[str]:
+    """Gera buscas dirigidas para portais essenciais via operador site:."""
+    identities = strong_client_identity_terms(client) or client_identity_terms(client)
+    queries = []
+
+    def add(query: str):
+        clean = re.sub(r"\s+", " ", query or "").strip()
+        if clean and clean not in queries:
+            queries.append(clean)
+
+    selected_identities = identities[:max_identities]
+    for source in ESSENTIAL_NEWS_SOURCES[:max_sources]:
+        site = source.get("site")
+        if not site:
+            continue
+        for identity in selected_identities:
+            quoted_identity = f'"{identity}"' if " " in identity else identity
+            add(f"{quoted_identity} site:{site}")
+
+    return queries
 
 
 def trusted_source_references(client) -> list[tuple[str, str]]:
