@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Fontes monitoradas{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <div>
+    <p class="page-eyebrow">Base de veículos</p>
+    <h1>Fontes monitoradas</h1>
+    <p>
+      Consulte os veículos e canais que o sistema usa ou já verificou para ampliar a busca de notícias.
+      Esta lista é compartilhada entre os clientes logados e ajuda a mapear onde notícias podem aparecer.
+    </p>
+  </div>
+  <a href="{% url 'dashboard' %}" class="button button-ghost">Dashboard</a>
+</section>
+
+<form method="get" class="filter-form" aria-label="Filtrar fontes monitoradas">
+  <div class="filter-group">
+    <label for="id_q">Buscar fonte</label>
+    <input id="id_q" type="search" name="q" value="{{ query }}" placeholder="Nome, domínio ou URL">
+  </div>
+  <div class="filter-group">
+    <label for="id_status">Situação</label>
+    <select id="id_status" name="status">
+      <option value="" {% if not status_filter %}selected{% endif %}>Todas</option>
+      <option value="active" {% if status_filter == "active" %}selected{% endif %}>Ativas nas buscas</option>
+      <option value="verified" {% if status_filter == "verified" %}selected{% endif %}>Verificadas</option>
+    </select>
+  </div>
+  <button type="submit">Filtrar</button>
+  <a href="{% url 'monitored_sources' %}" class="button button-ghost">Limpar</a>
+</form>
+
+<div class="card compact source-directory-summary">
+  <strong>{{ total_sources }}</strong>
+  <span>fonte{{ total_sources|pluralize }} encontrada{{ total_sources|pluralize }}</span>
+</div>
+
+{% if source_items %}
+  <div class="source-directory">
+    {% for item in source_items %}
+      <article class="source-card">
+        <div class="source-card__main">
+          <div>
+            <span class="quality-badge {{ item.status_class }}">{{ item.status_label }}</span>
+            <h2>{{ item.source.name }}</h2>
+            <p>{{ item.source.domain|default:item.source.url }}</p>
+          </div>
+          <a href="{{ item.source.url }}" target="_blank" rel="noopener noreferrer" class="button button-small">
+            Abrir site
+          </a>
+        </div>
+
+        <dl class="source-card__meta">
+          <div>
+            <dt>Tipo</dt>
+            <dd>{{ item.source.get_source_type_display }}</dd>
+          </div>
+          <div>
+            <dt>Descobertas</dt>
+            <dd>{{ item.source.discovery_count }}</dd>
+          </div>
+          <div>
+            <dt>Última descoberta</dt>
+            <dd>{{ item.source.last_discovered_at|date:"d/m/Y H:i"|default:"Não registrada" }}</dd>
+          </div>
+        </dl>
+
+        {% if item.endpoints %}
+          <div class="source-endpoints">
+            <span>Canais encontrados</span>
+            {% for endpoint in item.endpoints %}
+              <a href="{{ endpoint.url }}" target="_blank" rel="noopener noreferrer">
+                {{ endpoint.get_endpoint_type_display }}
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty-state">
+    <p>Nenhuma fonte encontrada com os filtros atuais.</p>
+    <a href="{% url 'monitored_sources' %}" class="button button-ghost">Ver todas</a>
+  </div>
+{% endif %}
+{% endblock %}
