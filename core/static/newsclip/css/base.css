@@ -136,18 +136,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .source-directory-summary { display: inline-flex; align-items: baseline; gap: .45rem; margin-bottom: 1rem; }
 .source-directory-summary strong { color: var(--text); font-size: 1.35rem; }
 .source-directory-summary span { color: var(--muted); font-weight: 700; }
-.source-directory { display: grid; gap: 1rem; }
-.source-card { padding: 1.1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
-.source-card__main { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.source-card__main h2 { margin: .6rem 0 .25rem; font-size: 1.1rem; }
-.source-card__main p { margin: 0; word-break: break-word; }
-.source-card__meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0 0; }
-.source-card__meta div { padding: .75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
-.source-card__meta dt { color: var(--muted); font-size: .76rem; font-weight: 800; text-transform: uppercase; }
-.source-card__meta dd { margin: .2rem 0 0; color: var(--text); font-weight: 700; }
-.source-endpoints { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
-.source-endpoints span { color: var(--muted); font-size: .8rem; font-weight: 800; text-transform: uppercase; }
-.source-endpoints a { display: inline-flex; padding: .24rem .5rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: .78rem; font-weight: 800; }
+.source-list { padding: 0; overflow: hidden; }
+.source-list table { border: 0; border-radius: 0; box-shadow: none; }
+.source-list td strong { color: var(--text); }
 .news-group { margin-bottom: 1rem; }
 .table-actions { justify-content: flex-end; margin-top: 1rem; }
 .is-hidden { display: none !important; }
@@ -220,4 +211,4 @@ canvas { max-width: 100%; }
 .landing-cta { margin-bottom: 1rem; padding: 2rem; border: 1px solid var(--border); border-radius: 8px; background: var(--text); color: #fff; }
 .landing-cta h2, .landing-cta p { color: #fff; }
 .landing-cta p { max-width: 680px; color: rgba(255,255,255,.74); }
-@media (max-width: 760px) { .app-header__inner, .page-header, .dashboard-header, .card-heading, .source-card__main { align-items: stretch; flex-direction: column; } .top-nav { justify-content: space-between; flex-wrap: wrap; } .app-main { padding: 1.25rem .9rem 2rem; } .filter-form, .form-actions, .card-actions, .report-list__item { align-items: stretch; flex-direction: column; } .filter-group, .button, button { width: 100%; } .form-grid, .two-column-layout, .benefit-grid, .steps-list, .outcome-grid, .coverage-summary, .source-card__meta { grid-template-columns: 1fr; } .landing-hero { min-height: auto; margin-top: -1.25rem; padding-top: 3.5rem; padding-bottom: 16rem; } .landing-hero__copy h1 { font-size: clamp(2rem, 10vw, 3.2rem); } .landing-hero__media { right: .9rem; bottom: 1rem; left: .9rem; width: auto; } .product-shot__side { display: none; } .product-shot__body { grid-template-columns: 1fr; min-height: 210px; } table { display: block; overflow-x: auto; white-space: nowrap; } }
+@media (max-width: 760px) { .app-header__inner, .page-header, .dashboard-header, .card-heading { align-items: stretch; flex-direction: column; } .top-nav { justify-content: space-between; flex-wrap: wrap; } .app-main { padding: 1.25rem .9rem 2rem; } .filter-form, .form-actions, .card-actions, .report-list__item { align-items: stretch; flex-direction: column; } .filter-group, .button, button { width: 100%; } .form-grid, .two-column-layout, .benefit-grid, .steps-list, .outcome-grid, .coverage-summary { grid-template-columns: 1fr; } .landing-hero { min-height: auto; margin-top: -1.25rem; padding-top: 3.5rem; padding-bottom: 16rem; } .landing-hero__copy h1 { font-size: clamp(2rem, 10vw, 3.2rem); } .landing-hero__media { right: .9rem; bottom: 1rem; left: .9rem; width: auto; } .product-shot__side { display: none; } .product-shot__body { grid-template-columns: 1fr; min-height: 210px; } table { display: block; overflow-x: auto; white-space: nowrap; } }
