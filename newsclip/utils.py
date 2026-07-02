@@ -350,7 +350,7 @@ def build_client_search_queries(client, max_queries: int = 20) -> list[str]:
 def build_essential_source_queries(
     client,
     max_sources: int = 24,
-    max_identities: int = 2,
+    max_identities: int = 1,
 ) -> list[str]:
     """Gera buscas dirigidas para portais essenciais via operador site:."""
     identities = strong_client_identity_terms(client) or client_identity_terms(client)
@@ -480,8 +480,11 @@ def validate_article_candidate(
     strong_identity_terms = strong_client_identity_terms(client)
     context_terms = client_context_terms(client)
     searchable = " ".join([title or "", content or "", url or "", source or ""])
+    visible_searchable = " ".join([title or "", url or "", source or ""])
     identity_matches = matched_terms(searchable, identity_terms)
     strong_identity_matches = matched_terms(searchable, strong_identity_terms)
+    visible_identity_matches = matched_terms(visible_searchable, identity_terms)
+    visible_strong_identity_matches = matched_terms(visible_searchable, strong_identity_terms)
     context_matches = matched_terms(searchable, context_terms)
     official_source = is_official_social_source(client, url, source)
     trusted_source = is_trusted_source(client, url, source)
@@ -489,7 +492,9 @@ def validate_article_candidate(
 
     full_name_norm = normalize_match_text(getattr(client, "name", ""))
     searchable_norm = normalize_match_text(searchable)
+    visible_searchable_norm = normalize_match_text(visible_searchable)
     full_name_match = bool(full_name_norm and full_name_norm in searchable_norm)
+    visible_full_name_match = bool(full_name_norm and full_name_norm in visible_searchable_norm)
     score = 0
     reason = "Sem identidade forte do cliente"
 
@@ -534,6 +539,20 @@ def validate_article_candidate(
     if social_or_video_source and not official_source and not (full_name_match or strong_identity_matches):
         score = min(score, 35)
         reason = f"{reason}; midia social/video nao oficial sem identidade forte"
+
+    # Snippets de agregadores, especialmente Google News/RSS, podem conter termos
+    # da consulta ou textos relacionados sem que a matéria em si seja sobre o
+    # cliente. Para clipping final, identidade precisa aparecer no título, link
+    # ou fonte — não apenas no resumo/conteúdo coletado.
+    has_visible_identity = bool(
+        official_source
+        or visible_full_name_match
+        or visible_strong_identity_matches
+        or (visible_identity_matches and context_matches)
+    )
+    if not has_visible_identity and score >= 70:
+        score = 55
+        reason = f"{reason}; identidade apenas no conteudo/snippet"
 
     if trusted_source and score >= 60:
         score = min(100, score + 10)

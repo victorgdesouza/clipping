@@ -42,6 +42,8 @@ LOOKBACK_DAYS = 90
 MAX_API_PAGES = config("NEWS_FETCH_MAX_PAGES", default=5, cast=int)
 MAX_GOOGLE_RSS_QUERIES = config("GOOGLE_RSS_MAX_QUERIES", default=20, cast=int)
 MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES", default=24, cast=int)
+GOOGLE_RSS_REQUEST_TIMEOUT = config("GOOGLE_RSS_REQUEST_TIMEOUT", default=12, cast=int)
+GOOGLE_RSS_WORKERS = config("GOOGLE_RSS_WORKERS", default=4, cast=int)
 
 # Variáveis de API lidas do .env ou ambiente
 NEWSDATA_KEY = config("NEWSDATA_API_KEY", default=None)
@@ -218,11 +220,29 @@ class Command(BaseCommand):
                     self.log(f"NewsData KEY não configurada. Pulando.", level='WARNING', client=client)
                 
                 # 2. Google RSS (Busca Dinâmica)
-                google_rss_queries = [
-                    *search_queries[:MAX_GOOGLE_RSS_QUERIES],
-                    *essential_source_queries[:MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES],
-                ]
-                futures_map[executor.submit(self.fetch_google_rss, client, google_rss_queries, since_dt)] = "GoogleRSS"
+                # Buscas comuns e fontes essenciais rodam em lotes separados.
+                # Assim, consultas site:g1/site:diario/etc. nunca são cortadas
+                # pelo limite das queries comuns e a coleta não fica presa em
+                # uma sequência longa de requests.
+                futures_map[
+                    executor.submit(
+                        self.fetch_google_rss,
+                        client,
+                        search_queries,
+                        since_dt,
+                        max_queries=MAX_GOOGLE_RSS_QUERIES,
+                    )
+                ] = "GoogleRSS"
+                if essential_source_queries:
+                    futures_map[
+                        executor.submit(
+                            self.fetch_google_rss,
+                            client,
+                            essential_source_queries,
+                            since_dt,
+                            max_queries=MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES,
+                        )
+                    ] = "GoogleRSS fontes essenciais"
 
                 if getattr(settings, "GDELT_ENABLED", True):
                     futures_map[executor.submit(fetch_gdelt, client, kws, since_dt, self.log)] = "GDELT"
@@ -326,23 +346,26 @@ class Command(BaseCommand):
             self.log(f"Erro NewsData: {e}", level='ERROR', client=client)
         return count_saved
 
-    def fetch_google_rss(self, client, keywords_list, since_dt):
+    def fetch_google_rss(self, client, keywords_list, since_dt, max_queries=None):
         count_saved = 0
         if not keywords_list: return 0
         try:
             headers = {"User-Agent": "Mozilla/5.0 (compatible; ClippingApp/1.0)"}
             # Consultas separadas evitam que uma expressão OR longa seja truncada
             # e aumentam a cobertura de termos com volumes muito diferentes.
-            for keyword in keywords_list[:MAX_GOOGLE_RSS_QUERIES]:
+            selected_keywords = list(dict.fromkeys(keywords_list))[: max_queries or MAX_GOOGLE_RSS_QUERIES]
+
+            def fetch_one(keyword):
+                saved_for_keyword = 0
                 try:
                     query_string = f'{keyword} when:{LOOKBACK_DAYS}d'
                     rss_url = f"https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-BR&q={quote_plus(query_string)}"
-                    response = requests.get(rss_url, headers=headers, timeout=30)
+                    response = requests.get(rss_url, headers=headers, timeout=GOOGLE_RSS_REQUEST_TIMEOUT)
                     response.raise_for_status()
                     feed = feedparser.parse(response.content)
                 except Exception as exc:
                     self.log(f"Google RSS falhou para o termo '{keyword}': {exc}", level='WARNING', client=client)
-                    continue
+                    return 0
 
                 for entry in feed.entries:
                     url = entry.get('link')
@@ -370,7 +393,14 @@ class Command(BaseCommand):
                         provider="GOOGLE_RSS",
                         query=keyword,
                     )
-                    count_saved += int(created is not None)
+                    saved_for_keyword += int(created is not None)
+                return saved_for_keyword
+
+            worker_count = max(1, min(GOOGLE_RSS_WORKERS, len(selected_keywords) or 1))
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = [executor.submit(fetch_one, keyword) for keyword in selected_keywords]
+                for future in as_completed(futures):
+                    count_saved += future.result()
         except Exception as e:
             self.log(f"Erro Google RSS: {e}", level='ERROR', client=client)
         return count_saved

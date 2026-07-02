@@ -1,8 +1,20 @@
 """Fontes essenciais usadas como base inicial de cobertura jornalistica."""
 
 ESSENTIAL_NEWS_SOURCES = [
-    # Grandes portais nacionais
+    # São José do Rio Preto e interior paulista — prioridade alta para clientes locais
+    {
+        "name": "G1 Rio Preto e Araçatuba",
+        "url": "https://g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba/",
+        "site": "g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba",
+    },
     {"name": "G1", "url": "https://g1.globo.com/", "site": "g1.globo.com"},
+    {"name": "Diário da Região", "url": "https://www.diariodaregiao.com.br/", "site": "diariodaregiao.com.br"},
+    {"name": "Gazeta de Rio Preto", "url": "https://www.gazetaderiopreto.com.br/", "site": "gazetaderiopreto.com.br"},
+    {"name": "TH+ SBT Interior", "url": "https://thmais.com.br/", "site": "thmais.com.br"},
+    {"name": "Record Rio Preto", "url": "https://record.r7.com/record-rio-preto/", "site": "record.r7.com/record-rio-preto"},
+    {"name": "Band Paulista", "url": "https://bandtv.band.uol.com.br/tv/paulista", "site": "band.uol.com.br"},
+    {"name": "Regional 24 Horas", "url": "https://regional24horas.com.br/", "site": "regional24horas.com.br"},
+    # Grandes portais nacionais
     {"name": "UOL Notícias", "url": "https://noticias.uol.com.br/", "site": "noticias.uol.com.br"},
     {"name": "Folha de S.Paulo", "url": "https://www.folha.uol.com.br/", "site": "folha.uol.com.br"},
     {"name": "Estadão", "url": "https://www.estadao.com.br/", "site": "estadao.com.br"},
@@ -15,18 +27,6 @@ ESSENTIAL_NEWS_SOURCES = [
     {"name": "Exame", "url": "https://exame.com/", "site": "exame.com"},
     {"name": "Veja", "url": "https://veja.abril.com.br/", "site": "veja.abril.com.br"},
     {"name": "IstoÉ", "url": "https://istoe.com.br/", "site": "istoe.com.br"},
-    # São José do Rio Preto e interior paulista
-    {
-        "name": "G1 Rio Preto e Araçatuba",
-        "url": "https://g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba/",
-        "site": "g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba",
-    },
-    {"name": "Diário da Região", "url": "https://www.diariodaregiao.com.br/", "site": "diariodaregiao.com.br"},
-    {"name": "Gazeta de Rio Preto", "url": "https://www.gazetaderiopreto.com.br/", "site": "gazetaderiopreto.com.br"},
-    {"name": "TH+ SBT Interior", "url": "https://thmais.com.br/", "site": "thmais.com.br"},
-    {"name": "Record Rio Preto", "url": "https://record.r7.com/record-rio-preto/", "site": "record.r7.com/record-rio-preto"},
-    {"name": "Band Paulista", "url": "https://bandtv.band.uol.com.br/tv/paulista", "site": "band.uol.com.br"},
-    {"name": "Regional 24 Horas", "url": "https://regional24horas.com.br/", "site": "regional24horas.com.br"},
     # Setoriais úteis para eventos, agro, esporte e negócios
     {"name": "Canal do Criador", "url": "https://canaldocriador.com.br/", "site": "canaldocriador.com.br"},
     {"name": "Compre Rural", "url": "https://www.comprerural.com/", "site": "comprerural.com"},

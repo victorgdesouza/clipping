@@ -159,6 +159,22 @@ class NewsCollectionRecallTests(TestCase):
 
         self.assertEqual(get_mock.call_count, 2)
 
+    @patch("newsclip.management.commands.fetch_news.feedparser.parse")
+    @patch("newsclip.management.commands.fetch_news.requests.get")
+    def test_google_rss_respects_explicit_query_limit(self, get_mock, parse_mock):
+        get_mock.return_value = Mock(content=b"", status_code=200)
+        get_mock.return_value.raise_for_status.return_value = None
+        parse_mock.return_value = FeedParserDict(entries=[])
+
+        Command().fetch_google_rss(
+            self.client_a,
+            ["q1", "q2", "q3", "q4"],
+            timezone.now() - timedelta(days=90),
+            max_queries=3,
+        )
+
+        self.assertEqual(get_mock.call_count, 3)
+
     def test_essential_source_queries_include_major_and_regional_portals(self):
         queries = build_essential_source_queries(self.client_a, max_sources=24)
         joined = "\n".join(queries)
@@ -328,6 +344,19 @@ class CountryBullsRelevanceTests(TestCase):
 
         self.assertIsNone(saved)
         self.assertFalse(Article.objects.filter(client=self.client_record).exists())
+
+    def test_identity_only_in_snippet_does_not_become_accepted_article(self):
+        result = validate_article_candidate(
+            self.client_record,
+            "52º Expoleite destaca genética leiteira e programação para produtores em Arapoti",
+            "Busca relacionada a Rio Preto Country Bulls, rodeio e evento.",
+            "https://canaldocriador.com.br/expoleite-arapoti",
+            "Canal do Criador",
+            provider="GOOGLE_RSS",
+        )
+
+        self.assertNotEqual(result["status"], "ACCEPTED")
+        self.assertLess(result["score"], 70)
 
 
 class AdditionalProvidersTests(TestCase):
