@@ -270,10 +270,89 @@ def social_handle_terms(client) -> list[str]:
     return list(dict.fromkeys(handles))
 
 
+PUBLIC_IDENTITY_PREFIXES = {
+    "prefeito",
+    "prefeita",
+    "prefeitura",
+    "vereador",
+    "vereadora",
+    "deputado",
+    "deputada",
+    "senador",
+    "senadora",
+    "governador",
+    "governadora",
+    "secretario",
+    "secretaria",
+    "ministro",
+    "ministra",
+    "coronel",
+}
+
+
+GENERIC_CONTEXT_TERMS = {
+    "agenda",
+    "arena",
+    "cidade",
+    "evento",
+    "festival",
+    "gado",
+    "ingressos",
+    "noticias",
+    "notícias",
+    "pecuaria",
+    "pecuária",
+    "peao",
+    "peão",
+    "rodeio",
+    "show",
+    "touro",
+}
+
+
+def legacy_keyword_identity_terms(client) -> list[str]:
+    """Promove aliases antigos que eram cadastrados em keywords como identidade.
+
+    O campo keywords nasceu como campo único. Em cadastros antigos, ele ainda
+    guarda termos que são identidade de pessoa pública/mandato, não apenas
+    contexto. Sem essa ponte, buscas por clientes políticos ficam presas ao
+    nome civil exato e perdem matérias que citam o cargo.
+    """
+    client_name_norm = normalize_match_text(getattr(client, "name", ""))
+    name_tokens = {
+        token
+        for token in client_name_norm.split()
+        if len(token) >= 4 and token not in {"sao", "são", "jose", "josé", "rio", "preto"}
+    }
+    promoted = []
+    seen = set()
+
+    for term in split_terms(getattr(client, "keywords", "")):
+        normalized = normalize_match_text(term)
+        words = normalized.split()
+        if len(words) < 2:
+            continue
+        if normalized in GENERIC_CONTEXT_TERMS:
+            continue
+
+        starts_with_public_identity = bool(words and words[0] in PUBLIC_IDENTITY_PREFIXES)
+        mentions_client_name = bool(name_tokens.intersection(words))
+        is_public_identity_phrase = starts_with_public_identity and len(words) >= 3
+
+        if not (mentions_client_name or is_public_identity_phrase):
+            continue
+        if normalized not in seen:
+            promoted.append(term)
+            seen.add(normalized)
+
+    return promoted
+
+
 def client_identity_terms(client) -> list[str]:
     values = [getattr(client, "name", "")]
     values.extend(split_terms(getattr(client, "name_variations", "")))
     values.extend(social_handle_terms(client))
+    values.extend(legacy_keyword_identity_terms(client))
     result = []
     seen = set()
     for value in values:
@@ -350,7 +429,7 @@ def build_client_search_queries(client, max_queries: int = 20) -> list[str]:
 def build_essential_source_queries(
     client,
     max_sources: int = 24,
-    max_identities: int = 1,
+    max_identities: int = 3,
 ) -> list[str]:
     """Gera buscas dirigidas para portais essenciais via operador site:."""
     identities = strong_client_identity_terms(client) or client_identity_terms(client)

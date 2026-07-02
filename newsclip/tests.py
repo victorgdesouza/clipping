@@ -25,6 +25,7 @@ from newsclip.templatetags.source_extras import domain
 from newsclip.utils import (
     build_essential_source_queries,
     deduplicate_articles_for_display,
+    legacy_keyword_identity_terms,
     save_article,
     validate_article_candidate,
 )
@@ -184,6 +185,26 @@ class NewsCollectionRecallTests(TestCase):
         self.assertIn('site:record.r7.com/record-rio-preto', joined)
         self.assertIn('site:band.uol.com.br', joined)
 
+    def test_legacy_public_keywords_are_used_as_identity_aliases(self):
+        client = Client.objects.create(
+            name="Fábio Candido",
+            keywords=(
+                "Prefeito de Rio Preto, Coronel Fábio Candido, "
+                "Prefeitura de Rio Preto, rodeio, show"
+            ),
+        )
+
+        aliases = legacy_keyword_identity_terms(client)
+        queries = build_essential_source_queries(client, max_sources=8)
+        joined = "\n".join(queries)
+
+        self.assertIn("Prefeito de Rio Preto", aliases)
+        self.assertIn("Coronel Fábio Candido", aliases)
+        self.assertIn("Prefeitura de Rio Preto", aliases)
+        self.assertNotIn("rodeio", aliases)
+        self.assertNotIn("show", aliases)
+        self.assertIn('"Prefeito de Rio Preto" site:g1.globo.com', joined)
+
     def test_ensure_essential_sources_registers_verified_sources(self):
         ensure_essential_news_sources()
 
@@ -237,6 +258,25 @@ class AdvancedValidationTests(TestCase):
         )
 
         self.assertEqual(result["status"], "REJECTED")
+
+    def test_legacy_public_role_keyword_can_accept_mayor_news(self):
+        client = Client.objects.create(
+            name="Fábio Candido",
+            keywords="Prefeito de Rio Preto, Coronel Fábio Candido, Prefeitura de Rio Preto",
+            excluded_keywords="Rio Preto da Eva",
+        )
+
+        result = validate_article_candidate(
+            client,
+            "Prefeito de Rio Preto assina ordem de serviço para novas obras",
+            "",
+            "https://gazetaderiopreto.com.br/noticias/prefeito-assina-ordem-servico",
+            "Gazeta de Rio Preto",
+            provider="GOOGLE_RSS",
+        )
+
+        self.assertEqual(result["status"], "ACCEPTED")
+        self.assertGreaterEqual(result["score"], 70)
 
 
 class CountryBullsRelevanceTests(TestCase):
