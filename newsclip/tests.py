@@ -21,6 +21,7 @@ from newsclip.discovery import (
 from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, GeneratedReport, Source, SourceEndpoint
 from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.signals import update_search_vector
+from newsclip.tasks import fetch_news_task
 from newsclip.templatetags.source_extras import domain
 from newsclip.utils import (
     build_essential_source_queries,
@@ -918,6 +919,17 @@ class ClientAccessTests(TestCase):
             self.client_record.pk,
             response.json()["task_id"] if response.json()["task_id"].isdigit() else 1,
             task_name=f"fetch-news-client-{self.client_record.pk}",
+        )
+
+    @patch("newsclip.tasks.call_command")
+    def test_fetch_news_task_uses_quick_mode_for_interactive_search(self, call_command_mock):
+        fetch_news_task(self.client_record.pk)
+
+        call_command_mock.assert_called_once_with(
+            "fetch_news",
+            "--client-id",
+            str(self.client_record.pk),
+            "--quick",
         )
 
 

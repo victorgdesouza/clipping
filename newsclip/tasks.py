@@ -25,7 +25,7 @@ def fetch_news_task(client_id, job_id=None):
     try:
         # Call the existing management command
         # This reuses the logic already implemented in the command
-        call_command("fetch_news", "--client-id", str(client_id))
+        call_command("fetch_news", "--client-id", str(client_id), "--quick")
         
         logger.info(f"Successfully completed fetch_news_task for client_id={client_id}")
         if job:

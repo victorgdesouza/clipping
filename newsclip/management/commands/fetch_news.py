@@ -137,6 +137,10 @@ class Command(BaseCommand):
             "--force-run", action="store_true",
             help="Força a execução de fetchers de API mesmo que as chaves não pareçam configuradas.",
         )
+        parser.add_argument(
+            "--quick", action="store_true",
+            help="Executa uma busca rápida para uso interativo no painel.",
+        )
 
     def log(self, message, level='INFO', client=None, source=None):
         """Helper para logar no stdout e no banco"""
@@ -162,6 +166,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         client_id = options.get("client_id")
         force_run = options.get("force_run", False)
+        quick_run = options.get("quick", False)
         clients = Client.objects.filter(id=client_id) if client_id else Client.objects.all()
 
         if not clients.exists():
@@ -193,7 +198,15 @@ class Command(BaseCommand):
 
             match_terms = client_positive_terms(client)
 
-            discovery_stats = discover_client_sources(client, kws, log=self.log, force=force_run)
+            discovery_stats = {
+                "queries": 0,
+                "results": 0,
+                "relevant": 0,
+                "new_sources": 0,
+                "articles": 0,
+            }
+            if not quick_run:
+                discovery_stats = discover_client_sources(client, kws, log=self.log, force=force_run)
             if discovery_stats["queries"]:
                 self.log(
                     "Descoberta Brave: "
@@ -209,14 +222,14 @@ class Command(BaseCommand):
             futures_map = {}
             with ThreadPoolExecutor(max_workers=5) as executor:
                 # 1. APIs Pagas (NewsAPI, NewsData)
-                if NEWSAPI_KEY or force_run:
+                if not quick_run and (NEWSAPI_KEY or force_run):
                     futures_map[executor.submit(self.fetch_newsapi, client, search_queries, since_dt, utc_now)] = "NewsAPI"
-                else:
+                elif not quick_run:
                     self.log(f"NewsAPI KEY não configurada. Pulando.", level='WARNING', client=client)
 
-                if NEWSDATA_KEY or force_run:
+                if not quick_run and (NEWSDATA_KEY or force_run):
                     futures_map[executor.submit(self.fetch_newsdata, client, search_queries, since_dt, utc_now)] = "NewsData"
-                else:
+                elif not quick_run:
                     self.log(f"NewsData KEY não configurada. Pulando.", level='WARNING', client=client)
                 
                 # 2. Google RSS (Busca Dinâmica)
@@ -244,29 +257,34 @@ class Command(BaseCommand):
                         )
                     ] = "GoogleRSS fontes essenciais"
 
-                if getattr(settings, "GDELT_ENABLED", True):
+                if not quick_run and getattr(settings, "GDELT_ENABLED", True):
                     futures_map[executor.submit(fetch_gdelt, client, kws, since_dt, self.log)] = "GDELT"
 
                 if getattr(settings, "YOUTUBE_API_KEY", "") or client.youtube:
                     futures_map[executor.submit(fetch_youtube, client, kws, since_dt, self.log)] = "YouTube"
 
                 # 3. Fontes do Banco de Dados (RSS e Scrape)
-                active_sources = Source.objects.filter(is_active=True)
-                for source in active_sources:
-                    if source.source_type == 'RSS':
-                        futures_map[executor.submit(self.fetch_single_rss, client, source, match_terms, since_dt)] = f"RSS: {source.name}"
-                    elif source.source_type == 'SCRAPE':
-                        futures_map[executor.submit(self.fetch_single_scrape, client, source, match_terms)] = f"Scrape: {source.name}"
+                # No modo rápido do painel, evitamos feeds/sitemaps descobertos:
+                # feedparser.parse(url) pode ficar preso em rede e deixar o botão
+                # aguardando por vários minutos. A coleta completa continua
+                # disponível pelo comando normal/agendado.
+                if not quick_run:
+                    active_sources = Source.objects.filter(is_active=True)
+                    for source in active_sources:
+                        if source.source_type == 'RSS':
+                            futures_map[executor.submit(self.fetch_single_rss, client, source, match_terms, since_dt)] = f"RSS: {source.name}"
+                        elif source.source_type == 'SCRAPE':
+                            futures_map[executor.submit(self.fetch_single_scrape, client, source, match_terms)] = f"Scrape: {source.name}"
 
-                active_endpoints = SourceEndpoint.objects.filter(
-                    is_active=True,
-                    source__is_active=True,
-                ).select_related("source")
-                for endpoint in active_endpoints:
-                    if endpoint.endpoint_type == "RSS":
-                        futures_map[executor.submit(self.fetch_endpoint_rss, client, endpoint, match_terms, since_dt)] = f"RSS descoberto: {endpoint.source.name}"
-                    elif endpoint.endpoint_type in {"SITEMAP", "NEWS_SITEMAP"}:
-                        futures_map[executor.submit(fetch_sitemap_endpoint, self, client, endpoint, match_terms, since_dt)] = f"Sitemap: {endpoint.source.name}"
+                    active_endpoints = SourceEndpoint.objects.filter(
+                        is_active=True,
+                        source__is_active=True,
+                    ).select_related("source")
+                    for endpoint in active_endpoints:
+                        if endpoint.endpoint_type == "RSS":
+                            futures_map[executor.submit(self.fetch_endpoint_rss, client, endpoint, match_terms, since_dt)] = f"RSS descoberto: {endpoint.source.name}"
+                        elif endpoint.endpoint_type in {"SITEMAP", "NEWS_SITEMAP"}:
+                            futures_map[executor.submit(fetch_sitemap_endpoint, self, client, endpoint, match_terms, since_dt)] = f"Sitemap: {endpoint.source.name}"
                 
                 client_total_saved = discovery_stats["articles"]
                 for future in as_completed(futures_map):
