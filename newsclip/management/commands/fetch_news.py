@@ -44,6 +44,8 @@ MAX_GOOGLE_RSS_QUERIES = config("GOOGLE_RSS_MAX_QUERIES", default=20, cast=int)
 MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES", default=24, cast=int)
 GOOGLE_RSS_REQUEST_TIMEOUT = config("GOOGLE_RSS_REQUEST_TIMEOUT", default=12, cast=int)
 GOOGLE_RSS_WORKERS = config("GOOGLE_RSS_WORKERS", default=4, cast=int)
+GOOGLE_RSS_QUICK_MAX_QUERIES = config("GOOGLE_RSS_QUICK_MAX_QUERIES", default=8, cast=int)
+GOOGLE_RSS_QUICK_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_QUICK_ESSENTIAL_SOURCE_QUERIES", default=18, cast=int)
 
 # Variáveis de API lidas do .env ou ambiente
 NEWSDATA_KEY = config("NEWSDATA_API_KEY", default=None)
@@ -243,7 +245,7 @@ class Command(BaseCommand):
                         client,
                         search_queries,
                         since_dt,
-                        max_queries=MAX_GOOGLE_RSS_QUERIES,
+                        max_queries=GOOGLE_RSS_QUICK_MAX_QUERIES if quick_run else MAX_GOOGLE_RSS_QUERIES,
                     )
                 ] = "GoogleRSS"
                 if essential_source_queries:
@@ -253,7 +255,11 @@ class Command(BaseCommand):
                             client,
                             essential_source_queries,
                             since_dt,
-                            max_queries=MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES,
+                            max_queries=(
+                                GOOGLE_RSS_QUICK_ESSENTIAL_SOURCE_QUERIES
+                                if quick_run
+                                else MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES
+                            ),
                         )
                     ] = "GoogleRSS fontes essenciais"
 

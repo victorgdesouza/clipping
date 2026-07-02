@@ -56,6 +56,10 @@ services:
         value: "12"
       - key: GOOGLE_RSS_WORKERS
         value: "4"
+      - key: GOOGLE_RSS_QUICK_MAX_QUERIES
+        value: "8"
+      - key: GOOGLE_RSS_QUICK_ESSENTIAL_SOURCE_QUERIES
+        value: "18"
       - key: GDELT_ENABLED
         value: "true"
       - key: GDELT_MAX_QUERIES
