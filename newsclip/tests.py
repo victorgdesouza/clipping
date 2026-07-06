@@ -18,7 +18,7 @@ from newsclip.discovery import (
     parse_sitemap,
     profile_source,
 )
-from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, GeneratedReport, Source, SourceEndpoint
+from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, FetchLog, GeneratedReport, Source, SourceEndpoint
 from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.signals import update_search_vector
 from newsclip.tasks import fetch_news_task
@@ -27,6 +27,7 @@ from newsclip.utils import (
     build_essential_source_queries,
     deduplicate_articles_for_display,
     legacy_keyword_identity_terms,
+    record_endpoint_failure,
     save_article,
     validate_article_candidate,
 )
@@ -201,7 +202,7 @@ class NewsCollectionRecallTests(TestCase):
 
         self.assertIn("Prefeito de Rio Preto", aliases)
         self.assertIn("Coronel Fábio Candido", aliases)
-        self.assertIn("Prefeitura de Rio Preto", aliases)
+        self.assertNotIn("Prefeitura de Rio Preto", aliases)
         self.assertNotIn("rodeio", aliases)
         self.assertNotIn("show", aliases)
         self.assertIn('"Prefeito de Rio Preto" site:g1.globo.com', joined)
@@ -278,6 +279,23 @@ class AdvancedValidationTests(TestCase):
 
         self.assertEqual(result["status"], "ACCEPTED")
         self.assertGreaterEqual(result["score"], 70)
+
+    def test_prefeitura_context_without_mayor_entity_is_not_accepted(self):
+        client = Client.objects.create(
+            name="Fábio Candido",
+            keywords="Prefeito de Rio Preto, Coronel Fábio Candido, Prefeitura de Rio Preto",
+        )
+
+        result = validate_article_candidate(
+            client,
+            "Prefeitura de Rio Preto vai usar nova técnica para esterilizar mosquitos da dengue",
+            "",
+            "https://g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba/noticia/prefeitura-mosquitos.ghtml",
+            "G1",
+            provider="GOOGLE_RSS",
+        )
+
+        self.assertNotEqual(result["status"], "ACCEPTED")
 
 
 class CountryBullsRelevanceTests(TestCase):
@@ -839,7 +857,27 @@ class ClientAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "<th>Fonte</th>", html=True)
         self.assertNotContains(response, "<th>Qualidade</th>", html=True)
-        self.assertNotContains(response, "Validada")
+
+    def test_client_news_review_queue_is_visible(self):
+        Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste em noticia ambigua",
+            url="https://jornal.example/review",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="REVIEW",
+            relevance_score=55,
+            validation_reason="Identidade fraca + contexto",
+            dedup_key="review-visible",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Revisar (1)")
+        self.assertContains(response, "Cliente Teste em noticia ambigua")
+        self.assertContains(response, "Identidade fraca + contexto")
 
     def test_monitored_sources_requires_login(self):
         response = self.client.get(reverse("monitored_sources"))
@@ -901,6 +939,56 @@ class ClientAccessTests(TestCase):
         self.assertNotContains(response, "Última descoberta")
         self.assertNotContains(response, "https://jornalativo.example/feed.xml")
         self.assertNotContains(response, "Jornal Candidato")
+
+    def test_logged_user_can_filter_degraded_sources(self):
+        degraded = Source.objects.create(
+            name="Jornal Degradado",
+            domain="degradado.example",
+            url="https://degradado.example/",
+            source_type="DISCOVERED",
+            status="DEGRADED",
+            is_active=True,
+        )
+        SourceEndpoint.objects.create(
+            source=degraded,
+            endpoint_type="NEWS_SITEMAP",
+            url="https://degradado.example/news-sitemap.xml",
+            is_active=True,
+            consecutive_errors=4,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("monitored_sources") + "?status=degraded")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Jornal Degradado")
+        self.assertContains(response, "Com falhas")
+
+    @override_settings(SOURCE_ENDPOINT_DEGRADED_AFTER_ERRORS=1, SOURCE_ENDPOINT_DISABLE_AFTER_ERRORS=0)
+    def test_endpoint_failure_logs_alert_and_marks_source_degraded(self):
+        source = Source.objects.create(
+            name="Jornal Instavel",
+            domain="instavel.example",
+            url="https://instavel.example/",
+            source_type="DISCOVERED",
+            status="ACTIVE",
+            is_active=True,
+        )
+        endpoint = SourceEndpoint.objects.create(
+            source=source,
+            endpoint_type="RSS",
+            url="https://instavel.example/feed.xml",
+            is_active=True,
+        )
+
+        record_endpoint_failure(endpoint, RuntimeError("timeout"), client=self.client_record)
+
+        endpoint.refresh_from_db()
+        source.refresh_from_db()
+        self.assertTrue(endpoint.is_active)
+        self.assertEqual(endpoint.consecutive_errors, 1)
+        self.assertEqual(source.status, "DEGRADED")
+        self.assertTrue(FetchLog.objects.filter(source=source, level="WARNING").exists())
 
     @patch("newsclip.views.async_task", return_value="task-123")
     def test_owner_starts_fetch_in_background(self, async_task_mock):

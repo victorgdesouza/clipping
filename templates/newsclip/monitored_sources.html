@@ -25,6 +25,8 @@
       <option value="" {% if not status_filter %}selected{% endif %}>Todas</option>
       <option value="active" {% if status_filter == "active" %}selected{% endif %}>Ativas nas buscas</option>
       <option value="verified" {% if status_filter == "verified" %}selected{% endif %}>Verificadas</option>
+      <option value="degraded" {% if status_filter == "degraded" %}selected{% endif %}>Com falhas</option>
+      <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>Inativas</option>
     </select>
   </div>
   <button type="submit">Filtrar</button>

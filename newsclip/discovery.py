@@ -24,6 +24,8 @@ from newsclip.utils import (
     audit_relevance_decision,
     client_positive_terms,
     contains_excluded_term,
+    record_endpoint_failure,
+    record_endpoint_success,
     save_article,
     validate_article_candidate,
 )
@@ -594,18 +596,8 @@ def fetch_sitemap_endpoint(command, client, endpoint: SourceEndpoint, keywords: 
             )
             saved_count += int(saved is not None)
 
-        endpoint.last_success_at = timezone.now()
-        endpoint.consecutive_errors = 0
-        endpoint.save(update_fields=["last_success_at", "consecutive_errors"])
+        record_endpoint_success(endpoint)
         return saved_count
     except (requests.RequestException, ElementTree.ParseError) as exc:
-        endpoint.last_error_at = timezone.now()
-        endpoint.consecutive_errors += 1
-        endpoint.save(update_fields=["last_error_at", "consecutive_errors"])
-        command.log(
-            f"Erro no sitemap {endpoint.source.name}: {exc}",
-            level="ERROR",
-            client=client,
-            source=endpoint.source,
-        )
+        record_endpoint_failure(endpoint, exc, client=client, log=command.log)
         return 0

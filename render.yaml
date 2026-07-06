@@ -60,6 +60,10 @@ services:
         value: "8"
       - key: GOOGLE_RSS_QUICK_ESSENTIAL_SOURCE_QUERIES
         value: "18"
+      - key: SOURCE_ENDPOINT_DEGRADED_AFTER_ERRORS
+        value: "3"
+      - key: SOURCE_ENDPOINT_DISABLE_AFTER_ERRORS
+        value: "0"
       - key: GDELT_ENABLED
         value: "true"
       - key: GDELT_MAX_QUERIES

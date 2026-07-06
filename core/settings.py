@@ -198,6 +198,10 @@ Q_CLUSTER = {
     "orm": "default",
 }
 
+SOURCE_ENDPOINT_DEGRADED_AFTER_ERRORS = int(os.getenv("SOURCE_ENDPOINT_DEGRADED_AFTER_ERRORS", "3"))
+# 0 = nunca desativa automaticamente; apenas marca/loga como DEGRADED.
+SOURCE_ENDPOINT_DISABLE_AFTER_ERRORS = int(os.getenv("SOURCE_ENDPOINT_DISABLE_AFTER_ERRORS", "0"))
+
 LOG_HANDLERS = ["console"]
 if DEBUG:
     LOG_HANDLERS.append("file")

@@ -30,6 +30,8 @@ from newsclip.utils import (
     build_essential_source_queries,
     client_context_terms,
     client_positive_terms,
+    record_endpoint_failure,
+    record_endpoint_success,
     save_article,
 )
 
@@ -437,14 +439,10 @@ class Command(BaseCommand):
             count = self._fetch_rss_url(
                 client, endpoint.source, endpoint.url, keywords_list, since_date_aware
             )
-            endpoint.last_success_at = dj_timezone.now()
-            endpoint.consecutive_errors = 0
-            endpoint.save(update_fields=["last_success_at", "consecutive_errors"])
+            record_endpoint_success(endpoint)
             return count
-        except Exception:
-            endpoint.last_error_at = dj_timezone.now()
-            endpoint.consecutive_errors += 1
-            endpoint.save(update_fields=["last_error_at", "consecutive_errors"])
+        except Exception as exc:
+            record_endpoint_failure(endpoint, exc, client=client, log=self.log)
             raise
 
     def _fetch_rss_url(self, client, source_obj, feed_url, keywords_list, since_date_aware):

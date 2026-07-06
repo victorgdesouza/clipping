@@ -37,6 +37,8 @@
     const btnFetch = document.getElementById('btn-fetch-news');
     const overlay = document.getElementById('loading-overlay');
     let pollTimer = null;
+    let pollAttempts = 0;
+    const maxPollAttempts = 40; // ~2 minutos; a busca pode continuar no servidor
 
     function finishFetch(message, isError = false) {
       if (pollTimer) clearTimeout(pollTimer);
@@ -47,6 +49,11 @@
     }
 
     function pollFetch(statusUrl) {
+      pollAttempts += 1;
+      if (pollAttempts > maxPollAttempts) {
+        finishFetch('Tempo limite de acompanhamento atingido. A busca pode continuar em segundo plano; tente atualizar a pagina em instantes.', true);
+        return;
+      }
       fetch(statusUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(response => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -72,6 +79,7 @@
     if (btnFetch) {
       btnFetch.addEventListener('click', e => {
         e.preventDefault();
+        pollAttempts = 0;
         btnFetch.disabled = true;
         overlay.style.display = 'flex';
         fetch("{% url 'fetch_news' client.id %}", {
@@ -162,6 +170,7 @@
 </script>
 
 <form method="get" class="filter-form">
+  <input type="hidden" name="status" value="{{ status_filter }}">
   <div class="filter-group">
     <label for="q">Buscar:</label>
     <input id="q" type="search" name="q" value="{{ current_search_query }}" placeholder="Titulo, fonte ou conteudo">
@@ -176,6 +185,21 @@
   <button type="submit" class="button">Aplicar filtros</button>
 </form>
 
+<div class="action-bar quality-tabs">
+  <a class="button {% if status_filter == 'accepted' %}{% else %}button-ghost{% endif %}"
+     href="?status=accepted&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
+    Validadas ({{ status_counts.accepted|default:0 }})
+  </a>
+  <a class="button {% if status_filter == 'review' %}{% else %}button-ghost{% endif %}"
+     href="?status=review&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
+    Revisar ({{ status_counts.review|default:0 }})
+  </a>
+  <a class="button {% if status_filter == 'rejected' %}{% else %}button-ghost{% endif %}"
+     href="?status=rejected&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
+    Rejeitadas ({{ status_counts.rejected|default:0 }})
+  </a>
+</div>
+
 <form method="get" id="page-size-form" class="filter-form page-size-form">
   <label for="page_size">Mostrar:</label>
   <select name="page_size" id="page_size" onchange="this.form.submit()">
@@ -185,6 +209,7 @@
   </select>
   <input type="hidden" name="sort" value="{{ sort }}">
   <input type="hidden" name="q" value="{{ current_search_query }}">
+  <input type="hidden" name="status" value="{{ status_filter }}">
 </form>
 
 <form method="post" action="{% url 'bulk_update_news' client.id %}" id="bulk-form">
@@ -203,6 +228,7 @@
         <th><input type="checkbox" id="select-all"></th>
         <th>Titulo</th>
         <th>Data</th>
+        {% if status_filter != "accepted" %}<th>Motivo</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -211,6 +237,7 @@
         <td><input type="checkbox" name="ids[]" value="{{ art.id }}" class="select-item"></td>
         <td><a href="{{ art.url }}" target="_blank">{{ art.title }}</a></td>
         <td>{{ art.published_at|date:"d/m/Y H:i" }}</td>
+        {% if status_filter != "accepted" %}<td>{{ art.validation_reason }} — {{ art.relevance_score }}</td>{% endif %}
       </tr>
       {% empty %}
       <tr>
@@ -223,9 +250,9 @@
 
 <div class="pagination">
   {% if articles.has_previous %}
-  <a href="?page=1&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page=1&page_size={{ page_size }}&status={{ status_filter }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Primeira</a>
-  <a href="?page={{ articles.previous_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page={{ articles.previous_page_number }}&page_size={{ page_size }}&status={{ status_filter }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Anterior</a>
   {% endif %}
 
@@ -234,9 +261,9 @@
   </span>
 
   {% if articles.has_next %}
-  <a href="?page={{ articles.next_page_number }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page={{ articles.next_page_number }}&page_size={{ page_size }}&status={{ status_filter }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Proxima</a>
-  <a href="?page={{ articles.paginator.num_pages }}&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
+  <a href="?page={{ articles.paginator.num_pages }}&page_size={{ page_size }}&status={{ status_filter }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}"
     class="pagination-link">Ultima</a>
   {% endif %}
 </div>

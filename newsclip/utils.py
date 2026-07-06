@@ -273,7 +273,6 @@ def social_handle_terms(client) -> list[str]:
 PUBLIC_IDENTITY_PREFIXES = {
     "prefeito",
     "prefeita",
-    "prefeitura",
     "vereador",
     "vereadora",
     "deputado",
@@ -693,6 +692,55 @@ def revalidate_accepted_articles_for_client(client, limit: int = 250) -> int:
         if validation["status"] != previous:
             changed += 1
     return changed
+
+
+def record_endpoint_success(endpoint) -> None:
+    endpoint.last_success_at = dj_timezone.now()
+    endpoint.consecutive_errors = 0
+    endpoint.save(update_fields=["last_success_at", "consecutive_errors"])
+
+
+def record_endpoint_failure(endpoint, exc, *, client=None, log=None) -> None:
+    from django.conf import settings
+    from newsclip.models import FetchLog, SourceEndpoint
+
+    endpoint.last_error_at = dj_timezone.now()
+    endpoint.consecutive_errors += 1
+    update_fields = ["last_error_at", "consecutive_errors"]
+    disable_after = getattr(settings, "SOURCE_ENDPOINT_DISABLE_AFTER_ERRORS", 0)
+    should_disable = bool(disable_after and endpoint.consecutive_errors >= int(disable_after))
+    if should_disable:
+        endpoint.is_active = False
+        update_fields.append("is_active")
+    SourceEndpoint.objects.filter(pk=endpoint.pk).update(
+        last_error_at=endpoint.last_error_at,
+        consecutive_errors=endpoint.consecutive_errors,
+        **({"is_active": False} if should_disable else {}),
+    )
+
+    source = endpoint.source
+    if endpoint.consecutive_errors >= getattr(settings, "SOURCE_ENDPOINT_DEGRADED_AFTER_ERRORS", 3):
+        source.status = "DEGRADED"
+        source.save(update_fields=["status"])
+
+    message = (
+        f"Endpoint com falha: {source.name} ({endpoint.endpoint_type}) "
+        f"{endpoint.url} | erros seguidos: {endpoint.consecutive_errors} | {exc}"
+    )
+    if should_disable:
+        message = f"Endpoint desativado automaticamente: {message}"
+    if log:
+        log(message, level="ERROR" if should_disable else "WARNING", client=client, source=source)
+    else:
+        try:
+            FetchLog.objects.create(
+                client=client,
+                source=source,
+                level="ERROR" if should_disable else "WARNING",
+                message=message[:2000],
+            )
+        except Exception:
+            pass
 
 
 # —————————————————————————————————————————

@@ -223,8 +223,7 @@ def monitored_sources(request):
     query = (request.GET.get("q") or "").strip()
 
     sources = (
-        Source.objects.filter(Q(is_active=True) | Q(status__in=["ACTIVE", "VERIFIED"]))
-        .exclude(status__in=["BLOCKED", "DISCARDED"])
+        Source.objects.filter(Q(is_active=True) | Q(status__in=["ACTIVE", "VERIFIED", "DEGRADED"]))
         .prefetch_related("endpoints")
         .order_by("-is_active", "-last_discovered_at", "name")
     )
@@ -233,6 +232,10 @@ def monitored_sources(request):
         sources = sources.filter(is_active=True)
     elif status_filter == "verified":
         sources = sources.filter(is_active=False, status="VERIFIED")
+    elif status_filter == "degraded":
+        sources = sources.filter(Q(status="DEGRADED") | Q(endpoints__consecutive_errors__gte=3)).distinct()
+    elif status_filter == "inactive":
+        sources = sources.filter(is_active=False)
 
     if query:
         sources = sources.filter(
@@ -247,8 +250,16 @@ def monitored_sources(request):
         source_items.append(
             {
                 "source": source,
-                "status_label": "Ativa nas buscas" if source.is_active else "Verificada",
-                "status_class": "quality-accepted" if source.is_active else "quality-review",
+                "status_label": (
+                    "Com falhas"
+                    if source.status == "DEGRADED"
+                    else ("Ativa nas buscas" if source.is_active else "Verificada")
+                ),
+                "status_class": (
+                    "quality-review"
+                    if source.status == "DEGRADED"
+                    else ("quality-accepted" if source.is_active else "quality-review")
+                ),
                 "endpoints": endpoints,
             }
         )
@@ -276,9 +287,22 @@ def client_news(request, client_id):
     sort_order = request.GET.get("sort", "date-desc")
     source_filter = request.GET.get("source", "")
     current_search_query = request.GET.get("q", "")
+    status_filter = request.GET.get("status", "accepted")
 
     revalidate_accepted_articles_for_client(client, limit=150)
-    articles_qs = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
+    base_articles_qs = Article.objects.filter(client=client, excluded=False)
+    status_counts = base_articles_qs.aggregate(
+        accepted=Count("id", filter=Q(validation_status="ACCEPTED")),
+        review=Count("id", filter=Q(validation_status="REVIEW")),
+        rejected=Count("id", filter=Q(validation_status="REJECTED")),
+    )
+    if status_filter == "review":
+        articles_qs = base_articles_qs.filter(validation_status="REVIEW")
+    elif status_filter == "rejected":
+        articles_qs = base_articles_qs.filter(validation_status="REJECTED")
+    else:
+        status_filter = "accepted"
+        articles_qs = base_articles_qs.filter(validation_status="ACCEPTED")
 
     if source_filter:
         articles_qs = articles_qs.filter(source__iexact=source_filter)
@@ -304,7 +328,11 @@ def client_news(request, client_id):
             updated_count = Article.objects.filter(client=client, id__in=ids_selecionados).update(excluded=True)
             messages.success(request, f"{updated_count} noticia(s) marcada(s) como excluida(s).")
         elif acao == "manter":
-            updated_count = Article.objects.filter(client=client, id__in=ids_selecionados).update(excluded=False)
+            updated_count = Article.objects.filter(client=client, id__in=ids_selecionados).update(
+                excluded=False,
+                validation_status="ACCEPTED",
+                validation_reason="Aprovada manualmente pelo usuario",
+            )
             messages.success(request, f"{updated_count} noticia(s) marcada(s) como mantida(s).")
         else:
             messages.error(request, "Acao invalida.")
@@ -336,6 +364,8 @@ def client_news(request, client_id):
     context = {
         "client": client,
         "articles": page_obj,
+        "status_filter": status_filter,
+        "status_counts": status_counts,
         "daily_labels_json": json.dumps([d["day"].strftime("%d/%m") for d in daily_qs if d["day"]]),
         "daily_counts_json": json.dumps([d["count"] for d in daily_qs if d["day"]]),
         "source_labels_json": json.dumps([s["source"] for s in top_sources_qs if s["source"]]),
