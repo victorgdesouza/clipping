@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnóstico de clipping{% endblock title %}
+
+{% block content %}
+<section class="page-header">
+  <div>
+    <p class="page-eyebrow">Auditoria</p>
+    <h1 class="page-title">Diagnóstico de clipping</h1>
+    <p>Visão protegida para superusuário. Não exibe valores de chaves ou segredos.</p>
+  </div>
+  <div class="action-bar">
+    <a class="button button-ghost" href="{% url 'dashboard' %}">Dashboard</a>
+    <a class="button button-ghost" href="{% url 'monitored_sources' %}">Fontes</a>
+  </div>
+</section>
+
+<form method="get" class="filter-form">
+  <div class="filter-group">
+    <label for="id_client">Cliente</label>
+    <input id="id_client" type="search" name="client" value="{{ client_query }}" placeholder="Fabio Candido">
+  </div>
+  <div class="filter-group">
+    <label for="id_start">Início</label>
+    <input id="id_start" type="date" name="start" value="{{ start }}">
+  </div>
+  <div class="filter-group">
+    <label for="id_end">Fim</label>
+    <input id="id_end" type="date" name="end" value="{{ end }}">
+  </div>
+  <button class="button" type="submit">Rodar diagnóstico</button>
+</form>
+
+{% if client_obj %}
+  <p class="form-help-text">Cliente encontrado: {{ client_obj.name }}</p>
+{% endif %}
+
+<div class="card">
+  <pre style="white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .9rem; line-height: 1.45; margin: 0;">{{ output }}</pre>
+</div>
+{% endblock content %}

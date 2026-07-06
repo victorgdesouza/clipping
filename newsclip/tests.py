@@ -799,6 +799,11 @@ class ClientAccessTests(TestCase):
         user_model = get_user_model()
         self.user = user_model.objects.create_user(username="owner", password="safe-password-123")
         self.other_user = user_model.objects.create_user(username="other", password="safe-password-123")
+        self.superuser = user_model.objects.create_superuser(
+            username="admin-owner",
+            email="admin@example.com",
+            password="safe-password-123",
+        )
         self.client_record = Client.objects.create(name="Cliente Teste", keywords="teste")
         self.client_record.users.add(self.user)
 
@@ -884,6 +889,35 @@ class ClientAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login/", response["Location"])
+
+    def test_diagnostic_requires_superuser(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("clipping_diagnostic"))
+
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(
+        BRAVE_SEARCH_API_KEY="brave-secret",
+        NEWSAPI_API_KEY="newsapi-secret",
+        NEWSDATA_API_KEY="newsdata-secret",
+        GOOGLE_API_KEY="google-secret",
+        GOOGLE_CSE_ID="cse-secret",
+    )
+    def test_superuser_can_open_diagnostic_without_exposing_secret_values(self):
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("clipping_diagnostic"),
+            {"client": "Cliente Teste", "start": "2026-04-01", "end": "2026-07-06"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Diagnostico: Cliente Teste")
+        self.assertContains(response, "BRAVE_SEARCH_API_KEY: OK")
+        self.assertContains(response, "GOOGLE_CSE_ID: OK")
+        self.assertNotContains(response, "brave-secret")
+        self.assertNotContains(response, "google-secret")
 
     def test_logged_user_can_consult_active_and_verified_sources(self):
         active_source = Source.objects.create(

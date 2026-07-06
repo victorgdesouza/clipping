@@ -22,6 +22,7 @@ from newsclip.views import (
     generate_report_view,
     download_report,
     monitored_sources,
+    clipping_diagnostic,
 )
 
 urlpatterns = [
@@ -30,6 +31,7 @@ urlpatterns = [
     path('', TemplateView.as_view(template_name='landing.html'), name='landing'),
     path('dashboard/', login_required(dashboard), name='dashboard'),
     path('fontes/', login_required(monitored_sources), name='monitored_sources'),
+    path('diagnostico/', login_required(clipping_diagnostic), name='clipping_diagnostic'),
 
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),

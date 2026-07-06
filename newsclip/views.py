@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.contrib import messages
 from django.contrib.auth import login
@@ -20,6 +20,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 from django_q.tasks import async_task
 
+from .diagnostics import build_clipping_diagnostic
 from .forms import ClientForm, ReportForm
 from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob, Source
 from .utils import deduplicate_articles_for_display, revalidate_accepted_articles_for_client
@@ -272,6 +273,38 @@ def monitored_sources(request):
             "status_filter": status_filter,
             "query": query,
             "total_sources": len(source_items),
+        },
+    )
+
+
+@login_required
+def clipping_diagnostic(request):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Apenas superusuarios podem acessar o diagnostico.")
+
+    client_query = (request.GET.get("client") or "Fabio Candido").strip()
+    start_raw = request.GET.get("start") or "2026-04-01"
+    end_raw = request.GET.get("end") or date.today().isoformat()
+    try:
+        start = date.fromisoformat(start_raw)
+        end = date.fromisoformat(end_raw)
+    except ValueError:
+        start = date(2026, 4, 1)
+        end = date.today()
+        output = "Datas invalidas. Use o formato YYYY-MM-DD."
+        client_obj = None
+    else:
+        client_obj, output = build_clipping_diagnostic(client_query, start, end)
+
+    return render(
+        request,
+        "newsclip/diagnostic.html",
+        {
+            "client_query": client_query,
+            "client_obj": client_obj,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "output": output,
         },
     )
 
