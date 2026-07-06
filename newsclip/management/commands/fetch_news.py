@@ -48,6 +48,8 @@ GOOGLE_RSS_REQUEST_TIMEOUT = config("GOOGLE_RSS_REQUEST_TIMEOUT", default=12, ca
 GOOGLE_RSS_WORKERS = config("GOOGLE_RSS_WORKERS", default=4, cast=int)
 GOOGLE_RSS_QUICK_MAX_QUERIES = config("GOOGLE_RSS_QUICK_MAX_QUERIES", default=8, cast=int)
 GOOGLE_RSS_QUICK_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_QUICK_ESSENTIAL_SOURCE_QUERIES", default=18, cast=int)
+BRAVE_SEARCH_QUICK_MAX_QUERIES = config("BRAVE_SEARCH_QUICK_MAX_QUERIES", default=3, cast=int)
+BRAVE_SEARCH_QUICK_RESULTS_PER_QUERY = config("BRAVE_SEARCH_QUICK_RESULTS_PER_QUERY", default=10, cast=int)
 
 # Variáveis de API lidas do .env ou ambiente
 NEWSDATA_KEY = config("NEWSDATA_API_KEY", default=None)
@@ -209,7 +211,17 @@ class Command(BaseCommand):
                 "new_sources": 0,
                 "articles": 0,
             }
-            if not quick_run:
+            if quick_run:
+                discovery_stats = discover_client_sources(
+                    client,
+                    kws,
+                    log=self.log,
+                    force=force_run,
+                    max_queries=BRAVE_SEARCH_QUICK_MAX_QUERIES,
+                    results_per_query=BRAVE_SEARCH_QUICK_RESULTS_PER_QUERY,
+                    profile_limit=0,
+                )
+            else:
                 discovery_stats = discover_client_sources(client, kws, log=self.log, force=force_run)
             if discovery_stats["queries"]:
                 self.log(

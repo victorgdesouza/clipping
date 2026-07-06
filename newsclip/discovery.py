@@ -254,7 +254,15 @@ def maybe_promote_source(source: Source) -> bool:
     return True
 
 
-def discover_client_sources(client, keywords: list[str], log=None, force: bool = False) -> dict[str, int]:
+def discover_client_sources(
+    client,
+    keywords: list[str],
+    log=None,
+    force: bool = False,
+    max_queries: int | None = None,
+    results_per_query: int | None = None,
+    profile_limit: int | None = None,
+) -> dict[str, int]:
     stats = {
         "queries": 0,
         "results": 0,
@@ -287,13 +295,13 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
     provider = BraveSearchProvider(
         api_key=api_key,
         timeout=getattr(settings, "BRAVE_SEARCH_TIMEOUT_SECONDS", 10),
-        count=getattr(settings, "BRAVE_SEARCH_RESULTS_PER_QUERY", 20),
+        count=results_per_query or getattr(settings, "BRAVE_SEARCH_RESULTS_PER_QUERY", 20),
         freshness=getattr(settings, "BRAVE_SEARCH_FRESHNESS", "pm"),
     )
     queries = build_discovery_queries(
         client,
         keywords,
-        max_queries=getattr(settings, "BRAVE_SEARCH_MAX_QUERIES", 12),
+        max_queries=max_queries or getattr(settings, "BRAVE_SEARCH_MAX_QUERIES", 12),
     )
     terms = client_positive_terms(client)
     sources_to_profile = []
@@ -372,7 +380,8 @@ def discover_client_sources(client, keywords: list[str], log=None, force: bool =
                 )
                 stats["articles"] += int(saved is not None)
 
-    profile_limit = getattr(settings, "DISCOVERY_PROFILE_NEW_SOURCES", 5)
+    if profile_limit is None:
+        profile_limit = getattr(settings, "DISCOVERY_PROFILE_NEW_SOURCES", 5)
     sources_to_profile = sources_to_profile[:profile_limit]
     profile_workers = max(1, min(3, len(sources_to_profile) or 1))
     with ThreadPoolExecutor(max_workers=profile_workers) as executor:

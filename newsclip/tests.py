@@ -649,6 +649,29 @@ class AutomaticDiscoveryTests(TestCase):
             {"RSS", "NEWS_SITEMAP"},
         )
 
+    @override_settings(BRAVE_SEARCH_API_KEY="test-key")
+    @patch("newsclip.management.commands.fetch_news.Command.fetch_google_rss", return_value=0)
+    @patch("newsclip.management.commands.fetch_news.discover_client_sources")
+    def test_quick_fetch_still_runs_limited_discovery(self, discovery_mock, _rss_mock):
+        discovery_mock.return_value = {
+            "queries": 1,
+            "results": 2,
+            "relevant": 1,
+            "articles": 0,
+            "new_sources": 0,
+            "profiled": 0,
+            "skipped": 0,
+        }
+
+        call_command("fetch_news", "--client-id", str(self.client_record.pk), "--quick")
+
+        discovery_mock.assert_called_once()
+        args, kwargs = discovery_mock.call_args
+        self.assertEqual(args[0], self.client_record)
+        self.assertEqual(kwargs["max_queries"], 3)
+        self.assertEqual(kwargs["results_per_query"], 10)
+        self.assertEqual(kwargs["profile_limit"], 0)
+
     @override_settings(
         DISCOVERY_AUTO_ACTIVATE_SOURCES=True,
         DISCOVERY_AUTO_ACTIVATE_MIN_RELEVANT_RESULTS=2,
@@ -918,6 +941,37 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "GOOGLE_CSE_ID: OK")
         self.assertNotContains(response, "brave-secret")
         self.assertNotContains(response, "google-secret")
+
+    def test_diagnostic_includes_report_visibility_counts(self):
+        Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste inaugura obra",
+            url="https://jornal.example/obra",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="ACCEPTED",
+            relevance_score=100,
+            dedup_key="report-visible-1",
+        )
+        Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste inaugura obra - Jornal Local",
+            url="https://jornal.example/obra?utm_source=google",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="ACCEPTED",
+            relevance_score=100,
+            dedup_key="report-visible-2",
+        )
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(reverse("clipping_diagnostic"), {"client": "Cliente Teste"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Diagnostico do relatorio completo")
+        self.assertContains(response, "ACCEPTED nao excluidos candidatos ao relatorio completo: 2")
+        self.assertContains(response, "Visiveis apos deduplicacao do relatorio completo: 1")
+        self.assertContains(response, "Possiveis itens ocultos pela deduplicacao")
 
     def test_logged_user_can_consult_active_and_verified_sources(self):
         active_source = Source.objects.create(
