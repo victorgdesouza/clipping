@@ -9,6 +9,7 @@ from newsclip.utils import (
     canonicalize_article_url,
     deduplicate_articles_for_display,
     normalize_match_text,
+    sanitize_sensitive_text,
     validate_article_candidate,
 )
 
@@ -161,7 +162,7 @@ def build_clipping_diagnostic(
             f"{run.started_at:%d/%m %H:%M} {run.provider} {run.status} "
             f"queries:{run.queries_count} resultados:{run.results_count} "
             f"relevantes:{run.relevant_count} artigos:{run.articles_count} "
-            f"erro:{(run.error_message or '')[:120]}",
+            f"erro:{sanitize_sensitive_text(run.error_message or '')[:120]}",
         )
 
     _line(lines)
@@ -175,7 +176,7 @@ def build_clipping_diagnostic(
     if not logs.exists():
         _line(lines, "Nenhum erro/aviso no periodo.")
     for log in logs[:200]:
-        _line(lines, f"{log.created_at:%d/%m %H:%M} {log.level} {log.message[:180]}")
+        _line(lines, f"{log.created_at:%d/%m %H:%M} {log.level} {sanitize_sensitive_text(log.message)[:180]}")
 
     _line(lines)
     _line(lines, "=== Fontes criticas e endpoints ===")
@@ -204,7 +205,8 @@ def build_clipping_diagnostic(
             _line(
                 lines,
                 f"  endpoint:{ep.endpoint_type} ativo:{ep.is_active} erros:{ep.consecutive_errors} "
-                f"ultimo_sucesso:{ep.last_success_at} ultimo_erro:{ep.last_error_at} url:{ep.url[:140]}",
+                f"ultimo_sucesso:{ep.last_success_at} ultimo_erro:{ep.last_error_at} "
+                f"url:{sanitize_sensitive_text(ep.url)[:140]}",
             )
 
     _line(lines)

@@ -22,6 +22,22 @@ from newsclip.models import Article
 from newsclip.source_seeds import ESSENTIAL_NEWS_SOURCES
 
 
+SENSITIVE_QUERY_PARAM_RE = re.compile(
+    r"(?i)([?&](?:api[_-]?key|apikey|key|token|access[_-]?token|subscription[_-]?key)=)([^&\s]+)"
+)
+SENSITIVE_HEADER_RE = re.compile(
+    r"(?i)\b((?:x-subscription-token|authorization)\s*[:=]\s*)([^\s,;]+)"
+)
+
+
+def sanitize_sensitive_text(value: str) -> str:
+    """Mascara segredos em textos de log/diagnóstico sem esconder o contexto do erro."""
+    text = str(value or "")
+    text = SENSITIVE_QUERY_PARAM_RE.sub(r"\1[REDACTED]", text)
+    text = SENSITIVE_HEADER_RE.sub(r"\1[REDACTED]", text)
+    return text
+
+
 # —————————————————————————————————————————
 # 1) Summary extractivo rápido (NLTK)
 # —————————————————————————————————————————
@@ -729,6 +745,7 @@ def record_endpoint_failure(endpoint, exc, *, client=None, log=None) -> None:
     )
     if should_disable:
         message = f"Endpoint desativado automaticamente: {message}"
+    message = sanitize_sensitive_text(message)
     if log:
         log(message, level="ERROR" if should_disable else "WARNING", client=client, source=source)
     else:

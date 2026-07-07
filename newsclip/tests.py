@@ -28,6 +28,7 @@ from newsclip.utils import (
     deduplicate_articles_for_display,
     legacy_keyword_identity_terms,
     record_endpoint_failure,
+    sanitize_sensitive_text,
     save_article,
     validate_article_candidate,
 )
@@ -39,6 +40,22 @@ class DomainFilterTests(TestCase):
         """domain filter deve extrair o host sem o prefixo www."""
         url = "https://www.exemplo.com/algum"
         self.assertEqual(domain(url), "exemplo.com")
+
+    def test_sensitive_log_text_is_redacted(self):
+        message = (
+            "Erro NewsData: https://newsdata.io/api/1/latest?"
+            "apikey=pub_secret_123&q=teste&key=google_secret "
+            "Authorization: BearerToken"
+        )
+
+        sanitized = sanitize_sensitive_text(message)
+
+        self.assertIn("apikey=[REDACTED]", sanitized)
+        self.assertIn("key=[REDACTED]", sanitized)
+        self.assertIn("Authorization: [REDACTED]", sanitized)
+        self.assertNotIn("pub_secret_123", sanitized)
+        self.assertNotIn("google_secret", sanitized)
+        self.assertNotIn("BearerToken", sanitized)
 
 
 class NewsCollectionRecallTests(TestCase):
@@ -928,11 +945,16 @@ class ClientAccessTests(TestCase):
         GOOGLE_CSE_ID="cse-secret",
     )
     def test_superuser_can_open_diagnostic_without_exposing_secret_values(self):
+        FetchLog.objects.create(
+            client=self.client_record,
+            level="ERROR",
+            message="Erro NewsData: https://newsdata.io/api/1/latest?apikey=newsdata-secret&q=teste",
+        )
         self.client.force_login(self.superuser)
 
         response = self.client.get(
             reverse("clipping_diagnostic"),
-            {"client": "Cliente Teste", "start": "2026-04-01", "end": "2026-07-06"},
+            {"client": "Cliente Teste", "start": "2026-04-01", "end": "2026-07-07"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -941,6 +963,8 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "GOOGLE_CSE_ID: OK")
         self.assertNotContains(response, "brave-secret")
         self.assertNotContains(response, "google-secret")
+        self.assertNotContains(response, "newsdata-secret")
+        self.assertContains(response, "apikey=[REDACTED]")
 
     def test_diagnostic_includes_report_visibility_counts(self):
         Article.objects.create(

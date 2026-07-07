@@ -32,6 +32,7 @@ from newsclip.utils import (
     client_positive_terms,
     record_endpoint_failure,
     record_endpoint_success,
+    sanitize_sensitive_text,
     save_article,
 )
 
@@ -150,6 +151,7 @@ class Command(BaseCommand):
 
     def log(self, message, level='INFO', client=None, source=None):
         """Helper para logar no stdout e no banco"""
+        message = sanitize_sensitive_text(message)
         style_func = self.style.SUCCESS if level == 'SUCCESS' else (self.style.ERROR if level == 'ERROR' else self.style.WARNING if level == 'WARNING' else self.style.NOTICE)
         
         # Print no console
