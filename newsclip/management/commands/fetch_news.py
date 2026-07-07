@@ -43,6 +43,8 @@ import re
 MAX_NEWSAPI_DAYS = 30
 LOOKBACK_DAYS = 90
 MAX_API_PAGES = config("NEWS_FETCH_MAX_PAGES", default=5, cast=int)
+MAX_NEWSDATA_DAYS = config("NEWSDATA_MAX_DAYS", default=30, cast=int)
+MAX_NEWSDATA_QUERY_TERMS = config("NEWSDATA_MAX_QUERY_TERMS", default=12, cast=int)
 MAX_GOOGLE_RSS_QUERIES = config("GOOGLE_RSS_MAX_QUERIES", default=20, cast=int)
 MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES", default=24, cast=int)
 GOOGLE_RSS_REQUEST_TIMEOUT = config("GOOGLE_RSS_REQUEST_TIMEOUT", default=12, cast=int)
@@ -342,12 +344,15 @@ class Command(BaseCommand):
         if not NEWSDATA_KEY: return 0
 
         try:
-            # NewsData impõe um limite curto para q; lotes evitam erro 422 em
-            # clientes com muitos termos sem multiplicar uma chamada por termo.
-            for query in build_query_batches(keywords, max_length=90):
+            newsdata_since = max(since_dt, until_dt - timedelta(days=MAX_NEWSDATA_DAYS))
+            # NewsData e bem mais sensivel a OR longo; usar as consultas ja
+            # montadas individualmente reduz 422 sem gastar uma chamada por
+            # palavra solta de contexto.
+            selected_queries = list(dict.fromkeys(k.strip() for k in keywords if k.strip()))[:MAX_NEWSDATA_QUERY_TERMS]
+            for query in selected_queries:
                 params = {
                     'apikey': NEWSDATA_KEY, 'q': query, 'language': 'pt',
-                    'from_date': since_dt.strftime('%Y-%m-%d'),
+                    'from_date': newsdata_since.strftime('%Y-%m-%d'),
                     'to_date': until_dt.strftime('%Y-%m-%d'),
                 }
                 response = requests.get(NEWSDATA_URL, params=params, timeout=30)

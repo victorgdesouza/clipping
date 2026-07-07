@@ -297,6 +297,25 @@ class AdvancedValidationTests(TestCase):
         self.assertEqual(result["status"], "ACCEPTED")
         self.assertGreaterEqual(result["score"], 70)
 
+    def test_strong_name_variation_in_trusted_source_snippet_is_accepted(self):
+        client = Client.objects.create(
+            name="Fábio Candido",
+            name_variations="Prefeito de Rio Preto, Prefeito Fábio Candido, Prefeito Coronel Fábio Candido",
+            domains="diariodaregiao.com.br",
+        )
+
+        result = validate_article_candidate(
+            client,
+            "Projeto prevê descontos de até 100% de juros e multa para pagamento de dívidas com o Semae",
+            "Texto relacionado ao Prefeito de Rio Preto e à administração municipal.",
+            "https://www.diariodaregiao.com.br/politica/projeto-semae",
+            "Diário da Região",
+            provider="GOOGLE_RSS",
+        )
+
+        self.assertEqual(result["status"], "ACCEPTED")
+        self.assertGreaterEqual(result["score"], 70)
+
     def test_prefeitura_context_without_mayor_entity_is_not_accepted(self):
         client = Client.objects.create(
             name="Fábio Candido",
@@ -439,6 +458,28 @@ class AdditionalProvidersTests(TestCase):
     def setUp(self):
         self.client_record = Client.objects.create(name="Cliente Regional", keywords="mobilidade")
         self.since = timezone.now() - timedelta(days=30)
+
+    @patch("newsclip.management.commands.fetch_news.NEWSDATA_KEY", "newsdata-test")
+    @patch("newsclip.management.commands.fetch_news.MAX_NEWSDATA_QUERY_TERMS", 2)
+    @patch("newsclip.management.commands.fetch_news.requests.get")
+    def test_newsdata_uses_individual_queries_instead_of_long_or_batch(self, get_mock):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"results": []}
+        get_mock.return_value = response
+
+        saved = Command().fetch_newsdata(
+            self.client_record,
+            ['"Cliente Regional"', '"Cliente Regional" mobilidade', '"Cliente Regional" transporte'],
+            timezone.now() - timedelta(days=90),
+            timezone.now(),
+        )
+
+        self.assertEqual(saved, 0)
+        self.assertEqual(get_mock.call_count, 2)
+        queries = [call.kwargs["params"]["q"] for call in get_mock.call_args_list]
+        self.assertEqual(queries, ['"Cliente Regional"', '"Cliente Regional" mobilidade'])
+        self.assertTrue(all(" OR " not in query for query in queries))
 
     @override_settings(YOUTUBE_API_KEY="youtube-test", YOUTUBE_MAX_QUERIES=1)
     @patch("newsclip.providers.requests.get")

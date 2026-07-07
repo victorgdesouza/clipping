@@ -645,8 +645,12 @@ def validate_article_candidate(
         or (visible_identity_matches and context_matches)
     )
     if not has_visible_identity and score >= 70:
-        score = 55
-        reason = f"{reason}; identidade apenas no conteudo/snippet"
+        if trusted_source and strong_identity_matches:
+            score = max(score, 75)
+            reason = f"{reason}; identidade forte no snippet de fonte confiavel"
+        else:
+            score = 55
+            reason = f"{reason}; identidade apenas no conteudo/snippet"
 
     if trusted_source and score >= 60:
         score = min(100, score + 10)
