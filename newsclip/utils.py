@@ -410,6 +410,21 @@ def client_context_terms(client) -> list[str]:
     return result
 
 
+def append_unique_terms(existing_value: str, new_terms: list[str]) -> tuple[str, list[str]]:
+    """Adiciona termos comma-separated sem duplicar variações já cadastradas."""
+    current_terms = split_terms(existing_value)
+    seen = {normalize_match_text(term) for term in current_terms}
+    added = []
+    for term in new_terms:
+        clean = re.sub(r"\s+", " ", term or "").strip()
+        normalized = normalize_match_text(clean)
+        if clean and normalized not in seen:
+            current_terms.append(clean)
+            added.append(clean)
+            seen.add(normalized)
+    return ", ".join(current_terms), added
+
+
 def contains_excluded_term(client, *values: str) -> bool:
     searchable = normalize_match_text(" ".join(value or "" for value in values))
     return any(normalize_match_text(term) in searchable for term in client_excluded_terms(client))
@@ -712,6 +727,50 @@ def revalidate_accepted_articles_for_client(client, limit: int = 250) -> int:
         if validation["status"] != previous:
             changed += 1
     return changed
+
+
+def revalidate_pending_articles_for_client(
+    client,
+    statuses: list[str] | None = None,
+    *,
+    limit: int | None = None,
+    persist: bool = True,
+) -> dict:
+    statuses = statuses or ["REVIEW", "REJECTED"]
+    allowed_statuses = {"ACCEPTED", "REVIEW", "REJECTED"}
+    selected_statuses = [status for status in statuses if status in allowed_statuses]
+    articles = Article.objects.select_related("client").filter(
+        client=client,
+        excluded=False,
+        validation_status__in=selected_statuses,
+    ).order_by("-published_at", "-id")
+    if limit:
+        articles = articles[:limit]
+
+    stats = {
+        "processed": 0,
+        "changed": 0,
+        "promoted": 0,
+        "accepted": 0,
+        "review": 0,
+        "rejected": 0,
+    }
+    for article in articles:
+        previous = article.validation_status
+        validation = revalidate_article(article, persist=persist, client=client)
+        status = validation["status"]
+        stats["processed"] += 1
+        if status == "ACCEPTED":
+            stats["accepted"] += 1
+        elif status == "REVIEW":
+            stats["review"] += 1
+        elif status == "REJECTED":
+            stats["rejected"] += 1
+        if status != previous:
+            stats["changed"] += 1
+        if previous != "ACCEPTED" and status == "ACCEPTED":
+            stats["promoted"] += 1
+    return stats
 
 
 def record_endpoint_success(endpoint) -> None:

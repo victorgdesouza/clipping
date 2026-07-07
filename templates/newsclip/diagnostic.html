@@ -37,6 +37,31 @@
 
 {% if client_obj %}
   <p class="form-help-text">Cliente encontrado: {{ client_obj.name }} (id: {{ client_obj.id }})</p>
+
+  <div class="card" style="margin-bottom: 1rem;">
+    <h2 style="margin-top: 0;">Reprocessar pendentes</h2>
+    <p class="form-help-text">
+      Use depois de ajustar variações de nome/identidade. Reprocessa notícias em REVIEW e REJECTED
+      e promove automaticamente o que passar na regra atual.
+    </p>
+    <form method="post" class="filter-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="revalidate_pending">
+      <input type="hidden" name="client_id" value="{{ client_obj.id }}">
+      <input type="hidden" name="return_query" value="{{ return_query }}">
+      <div class="filter-group" style="min-width: 320px; flex: 1;">
+        <label for="id_name_variations_to_add">Variações fortes para adicionar antes de reprocessar</label>
+        <textarea
+          id="id_name_variations_to_add"
+          name="name_variations_to_add"
+          rows="3"
+          class="auto-expand"
+        >{{ suggested_public_role_variations }}</textarea>
+        <span class="form-help-text">Separe por vírgula. Termos repetidos não serão duplicados.</span>
+      </div>
+      <button class="button" type="submit">Adicionar variações e reprocessar REVIEW/REJECTED</button>
+    </form>
+  </div>
 {% endif %}
 
 <div class="card">

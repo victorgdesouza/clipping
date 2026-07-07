@@ -23,7 +23,29 @@ from django_q.tasks import async_task
 from .diagnostics import build_clipping_diagnostic
 from .forms import ClientForm, ReportForm
 from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob, Source
-from .utils import deduplicate_articles_for_display, revalidate_accepted_articles_for_client
+from .utils import (
+    append_unique_terms,
+    deduplicate_articles_for_display,
+    normalize_match_text,
+    revalidate_accepted_articles_for_client,
+    revalidate_pending_articles_for_client,
+    split_terms,
+)
+
+
+SUGGESTED_PUBLIC_ROLE_VARIATIONS = (
+    "Prefeito de Rio Preto, Prefeito de São José do Rio Preto, "
+    "Prefeito Fábio Candido, Prefeito Coronel Fábio Candido"
+)
+
+
+def suggested_role_variations_for_client(client):
+    if not client:
+        return ""
+    normalized_name = normalize_match_text(client.name)
+    if "fabio" in normalized_name and "candido" in normalized_name:
+        return SUGGESTED_PUBLIC_ROLE_VARIATIONS
+    return ""
 
 
 def user_can_access_client(user, client):
@@ -282,6 +304,33 @@ def clipping_diagnostic(request):
     if not request.user.is_superuser:
         return HttpResponseForbidden("Apenas superusuarios podem acessar o diagnostico.")
 
+    if request.method == "POST":
+        action = request.POST.get("action")
+        post_client_id = (request.POST.get("client_id") or "").strip()
+        if action == "revalidate_pending" and post_client_id.isdigit():
+            client_obj = Client.objects.filter(pk=int(post_client_id)).first()
+            if client_obj is None:
+                messages.error(request, "Cliente nao encontrado para revalidacao.")
+            else:
+                variation_terms = split_terms(request.POST.get("name_variations_to_add") or "")
+                updated_value, added_terms = append_unique_terms(client_obj.name_variations, variation_terms)
+                if added_terms:
+                    client_obj.name_variations = updated_value
+                    client_obj.save(update_fields=["name_variations"])
+                stats = revalidate_pending_articles_for_client(client_obj, statuses=["REVIEW", "REJECTED"])
+                messages.success(
+                    request,
+                    "Revalidacao concluida: "
+                    f"{stats['processed']} processadas, {stats['promoted']} promovidas para validadas, "
+                    f"{stats['changed']} alteradas. "
+                    f"Variacoes adicionadas: {', '.join(added_terms) if added_terms else 'nenhuma'}.",
+                )
+            redirect_url = reverse("clipping_diagnostic")
+            query_string = request.POST.get("return_query") or f"client_id={post_client_id}"
+            return redirect(f"{redirect_url}?{query_string}")
+        messages.error(request, "Acao de diagnostico invalida.")
+        return redirect("clipping_diagnostic")
+
     client_query = (request.GET.get("client") or "Fabio Candido").strip()
     client_id_raw = (request.GET.get("client_id") or "").strip()
     client_id = int(client_id_raw) if client_id_raw.isdigit() else None
@@ -308,6 +357,8 @@ def clipping_diagnostic(request):
             "start": start.isoformat(),
             "end": end.isoformat(),
             "output": output,
+            "suggested_public_role_variations": suggested_role_variations_for_client(client_obj),
+            "return_query": request.GET.urlencode(),
         },
     )
 

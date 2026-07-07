@@ -316,6 +316,32 @@ class AdvancedValidationTests(TestCase):
         self.assertEqual(result["status"], "ACCEPTED")
         self.assertGreaterEqual(result["score"], 70)
 
+    def test_revalidate_pending_command_adds_variation_and_promotes_review(self):
+        client = Client.objects.create(name="Fábio Candido")
+        Article.objects.create(
+            client=client,
+            title="Prefeito de Rio Preto sanciona lei importante",
+            url="https://g1.globo.com/sp/rio-preto/noticia/comando",
+            source="G1",
+            published_at=timezone.now(),
+            validation_status="REVIEW",
+            relevance_score=55,
+            dedup_key="command-revalidate-review",
+        )
+
+        call_command(
+            "revalidate_pending_articles",
+            "--client-id",
+            str(client.pk),
+            "--add-name-variation",
+            "Prefeito de Rio Preto",
+        )
+
+        client.refresh_from_db()
+        article = Article.objects.get(client=client)
+        self.assertIn("Prefeito de Rio Preto", client.name_variations)
+        self.assertEqual(article.validation_status, "ACCEPTED")
+
     def test_prefeitura_context_without_mayor_entity_is_not_accepted(self):
         client = Client.objects.create(
             name="Fábio Candido",
@@ -1006,6 +1032,36 @@ class ClientAccessTests(TestCase):
         self.assertNotContains(response, "google-secret")
         self.assertNotContains(response, "newsdata-secret")
         self.assertContains(response, "apikey=[REDACTED]")
+
+    def test_superuser_can_add_variations_and_revalidate_pending_from_diagnostic(self):
+        Article.objects.create(
+            client=self.client_record,
+            title="Prefeito de Rio Preto sanciona lei importante",
+            url="https://g1.globo.com/sp/rio-preto/noticia/review",
+            source="G1",
+            published_at=timezone.now(),
+            validation_status="REVIEW",
+            relevance_score=55,
+            validation_reason="Pendente antes de variação forte",
+            dedup_key="diagnostic-revalidate-review",
+        )
+        self.client.force_login(self.superuser)
+
+        response = self.client.post(
+            reverse("clipping_diagnostic"),
+            {
+                "action": "revalidate_pending",
+                "client_id": str(self.client_record.pk),
+                "name_variations_to_add": "Prefeito de Rio Preto",
+                "return_query": f"client_id={self.client_record.pk}",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.client_record.refresh_from_db()
+        article = Article.objects.get(client=self.client_record, url="https://g1.globo.com/sp/rio-preto/noticia/review")
+        self.assertIn("Prefeito de Rio Preto", self.client_record.name_variations)
+        self.assertEqual(article.validation_status, "ACCEPTED")
 
     def test_diagnostic_includes_report_visibility_counts(self):
         Article.objects.create(
