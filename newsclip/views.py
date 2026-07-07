@@ -124,6 +124,16 @@ class ClientUpdateView(LoginRequiredMixin, UpdateView):
         response = super().form_valid(form)
         if hasattr(self.object, "users") and callable(getattr(self.object.users, "add", None)):
             self.object.users.add(self.request.user)
+        if self.request.POST.get("save_and_reprocess") == "1":
+            stats = revalidate_pending_articles_for_client(self.object, statuses=["REVIEW", "REJECTED"])
+            messages.success(
+                self.request,
+                "Cliente salvo e pendentes reprocessadas: "
+                f"{stats['processed']} processadas, {stats['promoted']} promovidas para validadas, "
+                f"{stats['changed']} alteradas.",
+            )
+        else:
+            messages.success(self.request, "Cliente salvo com sucesso.")
         return response
 
 
@@ -242,13 +252,52 @@ def dashboard(request):
 
 @login_required
 def monitored_sources(request):
+    if request.method == "POST":
+        if not request.user.is_superuser:
+            return HttpResponseForbidden("Apenas superusuarios podem manter fontes.")
+        action = request.POST.get("action")
+        source = get_object_or_404(Source, pk=request.POST.get("source_id"))
+        if action == "activate":
+            source.is_active = True
+            source.status = "ACTIVE"
+            source.save(update_fields=["is_active", "status"])
+            source.endpoints.update(is_active=True, consecutive_errors=0)
+            messages.success(request, f"Fonte ativada: {source.name}")
+        elif action == "verify":
+            source.status = "VERIFIED"
+            source.save(update_fields=["status"])
+            source.endpoints.update(consecutive_errors=0)
+            messages.success(request, f"Fonte marcada como verificada: {source.name}")
+        elif action == "deactivate":
+            source.is_active = False
+            source.status = "DEGRADED"
+            source.save(update_fields=["is_active", "status"])
+            source.endpoints.update(is_active=False)
+            messages.success(request, f"Fonte desativada das buscas: {source.name}")
+        elif action == "reset_errors":
+            source.endpoints.update(consecutive_errors=0, is_active=True)
+            if source.status == "DEGRADED":
+                source.status = "ACTIVE" if source.is_active else "VERIFIED"
+                source.save(update_fields=["status"])
+            messages.success(request, f"Falhas limpas para: {source.name}")
+        else:
+            messages.error(request, "Acao de fonte invalida.")
+        redirect_url = reverse("monitored_sources")
+        query_string = request.POST.get("return_query") or ""
+        return redirect(f"{redirect_url}?{query_string}" if query_string else redirect_url)
+
     status_filter = request.GET.get("status", "")
     query = (request.GET.get("q") or "").strip()
 
     sources = (
-        Source.objects.filter(Q(is_active=True) | Q(status__in=["ACTIVE", "VERIFIED", "DEGRADED"]))
+        Source.objects.filter(
+            Q(is_active=True)
+            | Q(status__in=["ACTIVE", "VERIFIED", "DEGRADED"])
+            | Q(endpoints__consecutive_errors__gte=1)
+        )
         .prefetch_related("endpoints")
         .order_by("-is_active", "-last_discovered_at", "name")
+        .distinct()
     )
 
     if status_filter == "active":
@@ -257,6 +306,8 @@ def monitored_sources(request):
         sources = sources.filter(is_active=False, status="VERIFIED")
     elif status_filter == "degraded":
         sources = sources.filter(Q(status="DEGRADED") | Q(endpoints__consecutive_errors__gte=3)).distinct()
+    elif status_filter == "problematic":
+        sources = sources.filter(Q(status="DEGRADED") | Q(endpoints__consecutive_errors__gte=1) | Q(is_active=False)).distinct()
     elif status_filter == "inactive":
         sources = sources.filter(is_active=False)
 
@@ -269,7 +320,10 @@ def monitored_sources(request):
 
     source_items = []
     for source in sources[:300]:
-        endpoints = list(source.endpoints.filter(is_active=True).order_by("endpoint_type", "url"))
+        endpoints = list(source.endpoints.all().order_by("-consecutive_errors", "endpoint_type", "url"))
+        has_problem = source.status == "DEGRADED" or (not source.is_active) or any(
+            endpoint.consecutive_errors for endpoint in endpoints
+        )
         source_items.append(
             {
                 "source": source,
@@ -284,6 +338,7 @@ def monitored_sources(request):
                     else ("quality-accepted" if source.is_active else "quality-review")
                 ),
                 "endpoints": endpoints,
+                "has_problem": has_problem,
             }
         )
 
@@ -295,6 +350,8 @@ def monitored_sources(request):
             "status_filter": status_filter,
             "query": query,
             "total_sources": len(source_items),
+            "is_superuser": request.user.is_superuser,
+            "return_query": request.GET.urlencode(),
         },
     )
 

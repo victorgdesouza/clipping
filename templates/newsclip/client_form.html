@@ -83,6 +83,11 @@
 
   <div class="form-actions">
     <a href="{% url 'dashboard' %}" class="button button-ghost">Cancelar</a>
+    {% if form.instance.pk %}
+      <button type="submit" name="save_and_reprocess" value="1" class="button button-ghost">
+        Salvar e reprocessar pendentes
+      </button>
+    {% endif %}
     <button type="submit" class="button">Salvar cliente</button>
   </div>
 </form>

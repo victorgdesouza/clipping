@@ -25,6 +25,9 @@
       <option value="" {% if not status_filter %}selected{% endif %}>Todas</option>
       <option value="active" {% if status_filter == "active" %}selected{% endif %}>Ativas nas buscas</option>
       <option value="verified" {% if status_filter == "verified" %}selected{% endif %}>Verificadas</option>
+      {% if is_superuser %}
+        <option value="problematic" {% if status_filter == "problematic" %}selected{% endif %}>Problemáticas</option>
+      {% endif %}
       <option value="degraded" {% if status_filter == "degraded" %}selected{% endif %}>Com falhas</option>
       <option value="inactive" {% if status_filter == "inactive" %}selected{% endif %}>Inativas</option>
     </select>
@@ -46,6 +49,9 @@
           <th>Site</th>
           <th>Situação</th>
           <th>Link</th>
+          {% if is_superuser %}
+            <th>Manutenção</th>
+          {% endif %}
         </tr>
       </thead>
       <tbody>
@@ -62,6 +68,52 @@
                 Abrir site
               </a>
             </td>
+            {% if is_superuser %}
+              <td>
+                <div class="source-maintenance">
+                  {% if item.has_problem %}
+                    <p class="form-help-text">Atenção: fonte com falhas, inativa ou degradada.</p>
+                  {% endif %}
+                  {% if item.endpoints %}
+                    <ul class="source-endpoint-list">
+                      {% for endpoint in item.endpoints %}
+                        <li>
+                          {{ endpoint.endpoint_type }}{% if endpoint.consecutive_errors %}: {{ endpoint.consecutive_errors }} falha{{ endpoint.consecutive_errors|pluralize }}{% endif %}
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    <p class="form-help-text">Sem endpoints cadastrados.</p>
+                  {% endif %}
+                  <div class="source-maintenance-actions">
+                    <form method="post">
+                      {% csrf_token %}
+                      <input type="hidden" name="source_id" value="{{ item.source.id }}">
+                      <input type="hidden" name="return_query" value="{{ return_query }}">
+                      <button type="submit" name="action" value="activate" class="button button-ghost">Ativar</button>
+                    </form>
+                    <form method="post">
+                      {% csrf_token %}
+                      <input type="hidden" name="source_id" value="{{ item.source.id }}">
+                      <input type="hidden" name="return_query" value="{{ return_query }}">
+                      <button type="submit" name="action" value="verify" class="button button-ghost">Verificada</button>
+                    </form>
+                    <form method="post">
+                      {% csrf_token %}
+                      <input type="hidden" name="source_id" value="{{ item.source.id }}">
+                      <input type="hidden" name="return_query" value="{{ return_query }}">
+                      <button type="submit" name="action" value="reset_errors" class="button button-ghost">Limpar falhas</button>
+                    </form>
+                    <form method="post">
+                      {% csrf_token %}
+                      <input type="hidden" name="source_id" value="{{ item.source.id }}">
+                      <input type="hidden" name="return_query" value="{{ return_query }}">
+                      <button type="submit" name="action" value="deactivate" class="button button-ghost">Desativar</button>
+                    </form>
+                  </div>
+                </div>
+              </td>
+            {% endif %}
           </tr>
         {% endfor %}
       </tbody>

@@ -991,6 +991,47 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "Cliente Teste em noticia ambigua")
         self.assertContains(response, "Identidade fraca + contexto")
 
+    def test_owner_can_save_client_and_reprocess_pending_articles(self):
+        client_record = Client.objects.create(name="Fábio Candido")
+        client_record.users.add(self.user)
+        Article.objects.create(
+            client=client_record,
+            title="Prefeito de Rio Preto sanciona lei importante",
+            url="https://g1.globo.com/sp/rio-preto/noticia/edit-reprocess",
+            source="G1",
+            published_at=timezone.now(),
+            validation_status="REVIEW",
+            relevance_score=55,
+            validation_reason="Pendente antes de variação forte",
+            dedup_key="edit-reprocess-review",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("client_edit", args=[client_record.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Salvar e reprocessar pendentes")
+
+        response = self.client.post(
+            reverse("client_edit", args=[client_record.pk]),
+            {
+                "name": "Fábio Candido",
+                "name_variations": "Prefeito de Rio Preto",
+                "context_terms": "",
+                "keywords": "",
+                "excluded_keywords": "",
+                "domains": "",
+                "instagram": "",
+                "x": "",
+                "youtube": "",
+                "save_and_reprocess": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        article = Article.objects.get(client=client_record)
+        self.assertEqual(article.validation_status, "ACCEPTED")
+
     def test_monitored_sources_requires_login(self):
         response = self.client.get(reverse("monitored_sources"))
 
@@ -1161,6 +1202,8 @@ class ClientAccessTests(TestCase):
         self.assertNotContains(response, "Última descoberta")
         self.assertNotContains(response, "https://jornalativo.example/feed.xml")
         self.assertNotContains(response, "Jornal Candidato")
+        self.assertNotContains(response, "<th>Manutenção</th>", html=True)
+        self.assertNotContains(response, "Limpar falhas")
 
     def test_logged_user_can_filter_degraded_sources(self):
         degraded = Source.objects.create(
@@ -1185,6 +1228,73 @@ class ClientAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Jornal Degradado")
         self.assertContains(response, "Com falhas")
+
+    def test_superuser_can_maintain_problematic_sources(self):
+        degraded = Source.objects.create(
+            name="Jornal Instavel",
+            domain="instavel.example",
+            url="https://instavel.example/",
+            source_type="DISCOVERED",
+            status="DEGRADED",
+            is_active=False,
+        )
+        endpoint = SourceEndpoint.objects.create(
+            source=degraded,
+            endpoint_type="RSS",
+            url="https://instavel.example/feed.xml",
+            is_active=False,
+            consecutive_errors=4,
+        )
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(reverse("monitored_sources") + "?status=problematic")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Problemáticas")
+        self.assertContains(response, "<th>Manutenção</th>", html=True)
+        self.assertContains(response, "Jornal Instavel")
+        self.assertContains(response, "Limpar falhas")
+
+        response = self.client.post(
+            reverse("monitored_sources"),
+            {
+                "source_id": str(degraded.pk),
+                "action": "activate",
+                "return_query": "status=problematic",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        degraded.refresh_from_db()
+        endpoint.refresh_from_db()
+        self.assertTrue(degraded.is_active)
+        self.assertEqual(degraded.status, "ACTIVE")
+        self.assertTrue(endpoint.is_active)
+        self.assertEqual(endpoint.consecutive_errors, 0)
+
+    def test_common_user_cannot_post_source_maintenance(self):
+        source = Source.objects.create(
+            name="Jornal Restrito",
+            domain="restrito.example",
+            url="https://restrito.example/",
+            source_type="DISCOVERED",
+            status="DEGRADED",
+            is_active=False,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("monitored_sources"),
+            {
+                "source_id": str(source.pk),
+                "action": "activate",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        source.refresh_from_db()
+        self.assertFalse(source.is_active)
+        self.assertEqual(source.status, "DEGRADED")
 
     @override_settings(SOURCE_ENDPOINT_DEGRADED_AFTER_ERRORS=1, SOURCE_ENDPOINT_DISABLE_AFTER_ERRORS=0)
     def test_endpoint_failure_logs_alert_and_marks_source_degraded(self):
