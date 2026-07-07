@@ -973,6 +973,19 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "Visiveis apos deduplicacao do relatorio completo: 1")
         self.assertContains(response, "Possiveis itens ocultos pela deduplicacao")
 
+    def test_diagnostic_can_target_exact_client_id_when_names_overlap(self):
+        other_client = Client.objects.create(name="Coronel Cliente Teste")
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("clipping_diagnostic"),
+            {"client": "Cliente Teste", "client_id": str(self.client_record.pk)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"Diagnostico: {self.client_record.name} [id:{self.client_record.pk}]")
+        self.assertNotContains(response, f"Diagnostico: {other_client.name} [id:{other_client.pk}]")
+
     def test_logged_user_can_consult_active_and_verified_sources(self):
         active_source = Source.objects.create(
             name="Jornal Ativo",

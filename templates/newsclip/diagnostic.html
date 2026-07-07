@@ -21,6 +21,10 @@
     <input id="id_client" type="search" name="client" value="{{ client_query }}" placeholder="Fabio Candido">
   </div>
   <div class="filter-group">
+    <label for="id_client_id">ID exato</label>
+    <input id="id_client_id" type="number" name="client_id" value="{{ client_id }}" placeholder="Opcional">
+  </div>
+  <div class="filter-group">
     <label for="id_start">Início</label>
     <input id="id_start" type="date" name="start" value="{{ start }}">
   </div>
@@ -32,7 +36,7 @@
 </form>
 
 {% if client_obj %}
-  <p class="form-help-text">Cliente encontrado: {{ client_obj.name }}</p>
+  <p class="form-help-text">Cliente encontrado: {{ client_obj.name }} (id: {{ client_obj.id }})</p>
 {% endif %}
 
 <div class="card">

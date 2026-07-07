@@ -283,6 +283,8 @@ def clipping_diagnostic(request):
         return HttpResponseForbidden("Apenas superusuarios podem acessar o diagnostico.")
 
     client_query = (request.GET.get("client") or "Fabio Candido").strip()
+    client_id_raw = (request.GET.get("client_id") or "").strip()
+    client_id = int(client_id_raw) if client_id_raw.isdigit() else None
     start_raw = request.GET.get("start") or "2026-04-01"
     end_raw = request.GET.get("end") or date.today().isoformat()
     try:
@@ -294,13 +296,14 @@ def clipping_diagnostic(request):
         output = "Datas invalidas. Use o formato YYYY-MM-DD."
         client_obj = None
     else:
-        client_obj, output = build_clipping_diagnostic(client_query, start, end)
+        client_obj, output = build_clipping_diagnostic(client_query, start, end, client_id=client_id)
 
     return render(
         request,
         "newsclip/diagnostic.html",
         {
             "client_query": client_query,
+            "client_id": client_id_raw,
             "client_obj": client_obj,
             "start": start.isoformat(),
             "end": end.isoformat(),

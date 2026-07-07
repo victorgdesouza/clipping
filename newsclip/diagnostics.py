@@ -17,7 +17,11 @@ def _line(lines: list[str], value: str = "") -> None:
     lines.append(value)
 
 
-def _find_client(client_query: str) -> tuple[Client | None, list[Client]]:
+def _find_client(client_query: str, client_id: int | None = None) -> tuple[Client | None, list[Client]]:
+    if client_id:
+        client = Client.objects.filter(pk=client_id).first()
+        return client, [client] if client else []
+
     direct_matches = list(Client.objects.filter(name__icontains=client_query).order_by("id")[:10])
     if direct_matches:
         return direct_matches[0], direct_matches
@@ -106,19 +110,26 @@ def _append_report_diagnostic(lines: list[str], client: Client) -> None:
         _line(lines, f"... lista limitada a 300 de {accepted.count()} itens.")
 
 
-def build_clipping_diagnostic(client_query: str = "Fabio Candido", start=None, end=None) -> tuple[Client | None, str]:
+def build_clipping_diagnostic(
+    client_query: str = "Fabio Candido",
+    start=None,
+    end=None,
+    client_id: int | None = None,
+) -> tuple[Client | None, str]:
     """Gera um diagnóstico textual sem expor valores de chaves/segredos."""
     start = start or date(2026, 4, 1)
     end = end or date.today()
-    client, client_matches = _find_client(client_query)
+    client, client_matches = _find_client(client_query, client_id=client_id)
     lines: list[str] = []
 
     if not client:
-        return None, f"Cliente nao encontrado: {client_query}"
+        label = f"id={client_id}" if client_id else client_query
+        return None, f"Cliente nao encontrado: {label}"
 
-    _line(lines, f"=== Diagnostico: {client.name} ({start} a {end}) ===")
+    _line(lines, f"=== Diagnostico: {client.name} [id:{client.pk}] ({start} a {end}) ===")
     if len(client_matches) > 1:
-        _line(lines, "ATENCAO: mais de um cliente combina com a busca. Diagnostico usando o primeiro:")
+        _line(lines, "ATENCAO: mais de um cliente combina com a busca. Diagnostico usando o primeiro.")
+        _line(lines, "Para remover a ambiguidade, rode novamente usando o ID exato do cliente:")
         for match in client_matches:
             _line(lines, f"  id:{match.pk} nome:{match.name}")
     _line(lines)
