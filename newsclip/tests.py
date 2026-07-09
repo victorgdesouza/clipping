@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
 from feedparser import FeedParserDict
@@ -1045,12 +1045,15 @@ class ClientAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Validar selecionadas")
         self.assertContains(response, "Invalidar selecionadas")
+        self.assertContains(response, "<th>Ações</th>", html=True)
+        self.assertContains(response, 'data-action="validate"')
+        self.assertContains(response, 'data-action="reject"')
 
         response = self.client.post(
             reverse("bulk_update_news", args=[self.client_record.pk]),
             {
                 "action": "validate",
-                "ids[]": [str(review_article.pk)],
+                "selected_articles": [str(review_article.pk)],
                 "return_query": "status=review",
             },
         )
@@ -1104,6 +1107,26 @@ class ClientAccessTests(TestCase):
         self.assertNotContains(response, "Cliente Teste em noticia rejeitada para manter")
 
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
+        self.assertContains(response, "Cliente Teste em noticia rejeitada para manter")
+
+        response = self.client.post(
+            reverse("bulk_update_news", args=[self.client_record.pk]),
+            {
+                "action": "review",
+                "selected_articles": [str(rejected_article.pk)],
+                "return_query": "status=accepted",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        rejected_article.refresh_from_db()
+        self.assertEqual(rejected_article.validation_status, "REVIEW")
+        self.assertEqual(rejected_article.validation_reason, "Movida manualmente para revisao pelo usuario")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
+        self.assertNotContains(response, "Cliente Teste em noticia rejeitada para manter")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
         self.assertContains(response, "Cliente Teste em noticia rejeitada para manter")
 
     def test_owner_can_save_client_and_reprocess_pending_articles(self):
@@ -1168,10 +1191,13 @@ class ClientAccessTests(TestCase):
         GOOGLE_CSE_ID="cse-secret",
     )
     def test_superuser_can_open_diagnostic_without_exposing_secret_values(self):
-        FetchLog.objects.create(
+        fetch_log = FetchLog.objects.create(
             client=self.client_record,
             level="ERROR",
             message="Erro NewsData: https://newsdata.io/api/1/latest?apikey=newsdata-secret&q=teste",
+        )
+        FetchLog.objects.filter(pk=fetch_log.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 5, 1, 12, 0))
         )
         self.client.force_login(self.superuser)
 

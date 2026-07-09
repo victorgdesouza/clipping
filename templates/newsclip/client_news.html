@@ -133,7 +133,7 @@
 
     updateBulkActions();
 
-    function submitBulkAction(actionValue) {
+    function setAction(actionValue) {
       const prevInput = form.querySelector('input[name="action"]');
       if (prevInput) prevInput.remove();
 
@@ -142,6 +142,15 @@
       action.name = 'action';
       action.value = actionValue;
       form.appendChild(action);
+    }
+
+    function clearQuickInputs() {
+      form.querySelectorAll('.quick-selected-article').forEach(input => input.remove());
+    }
+
+    function submitBulkAction(actionValue) {
+      clearQuickInputs();
+      setAction(actionValue);
 
       if (!Array.from(checkboxes).some(chk => chk.checked)) {
         alert('Selecione pelo menos uma noticia!');
@@ -150,11 +159,32 @@
       form.submit();
     }
 
+    function submitQuickAction(actionValue, articleId, button) {
+      checkboxes.forEach(chk => chk.checked = false);
+      updateBulkActions();
+      clearQuickInputs();
+      setAction(actionValue);
+
+      let selectedArticle = document.createElement('input');
+      selectedArticle.type = 'hidden';
+      selectedArticle.name = 'selected_articles';
+      selectedArticle.value = articleId;
+      selectedArticle.className = 'quick-selected-article';
+      form.appendChild(selectedArticle);
+
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Salvando...';
+      }
+      form.submit();
+    }
+
     const bulkButtons = {
       'btn-exclude-selected': 'exclude',
       'btn-keep-selected': 'keep',
       'btn-validate-selected': 'validate',
-      'btn-reject-selected': 'reject'
+      'btn-reject-selected': 'reject',
+      'btn-review-selected': 'review'
     };
     Object.entries(bulkButtons).forEach(([buttonId, actionValue]) => {
       const button = document.getElementById(buttonId);
@@ -163,6 +193,12 @@
           submitBulkAction(actionValue);
         };
       }
+    });
+
+    document.querySelectorAll('.quick-review-action').forEach(button => {
+      button.addEventListener('click', function () {
+        submitQuickAction(button.dataset.action, button.dataset.articleId, button);
+      });
     });
   });
 </script>
@@ -224,6 +260,11 @@
         Invalidar selecionadas
       </button>
     {% endif %}
+    {% if status_filter != "review" %}
+      <button type="button" id="btn-review-selected" class="button button-ghost">
+        Mover para revisão
+      </button>
+    {% endif %}
     <button type="button" id="btn-keep-selected" class="button button-ghost">
       Manter selecionadas
     </button>
@@ -238,6 +279,7 @@
         <th>Titulo</th>
         <th>Data</th>
         {% if status_filter != "accepted" %}<th>Motivo</th>{% endif %}
+        <th>Ações</th>
       </tr>
     </thead>
     <tbody>
@@ -247,10 +289,23 @@
         <td><a href="{{ art.url }}" target="_blank">{{ art.title }}</a></td>
         <td>{{ art.published_at|date:"d/m/Y H:i" }}</td>
         {% if status_filter != "accepted" %}<td>{{ art.validation_reason }} — {{ art.relevance_score }}</td>{% endif %}
+        <td>
+          <div class="quick-review-actions">
+            {% if status_filter != "accepted" %}
+              <button type="button" class="button button-small quick-review-action" data-action="validate" data-article-id="{{ art.id }}">Validar</button>
+            {% endif %}
+            {% if status_filter != "rejected" %}
+              <button type="button" class="button button-small button-ghost quick-review-action" data-action="reject" data-article-id="{{ art.id }}">Rejeitar</button>
+            {% endif %}
+            {% if status_filter != "review" %}
+              <button type="button" class="button button-small button-ghost quick-review-action" data-action="review" data-article-id="{{ art.id }}">Revisar</button>
+            {% endif %}
+          </div>
+        </td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="3" class="empty-message">Nenhum artigo encontrado.</td>
+        <td colspan="{% if status_filter != 'accepted' %}5{% else %}4{% endif %}" class="empty-message">Nenhum artigo encontrado.</td>
       </tr>
       {% endfor %}
     </tbody>

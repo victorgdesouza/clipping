@@ -538,7 +538,7 @@ def bulk_update_news(request, client_id):
     action = request.POST.get("action")
     ids = request.POST.getlist("ids[]") or request.POST.getlist("selected_articles")
 
-    if action not in ("exclude", "keep", "validate", "reject") or not ids:
+    if action not in ("exclude", "keep", "validate", "reject", "review") or not ids:
         if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
             return JsonResponse({"error": "Parametros invalidos", "updated": 0}, status=400)
         messages.error(request, "Parametros invalidos ou nenhuma noticia selecionada.")
@@ -547,33 +547,49 @@ def bulk_update_news(request, client_id):
     articles_qs = Article.objects.filter(client=client, id__in=ids)
     if action == "exclude":
         updated_count = articles_qs.update(excluded=True)
-        verb = "excluidas"
+        verb = "excluida(s)"
+        destination = "excluidas"
     elif action == "validate":
         updated_count = articles_qs.update(
             excluded=False,
             validation_status="ACCEPTED",
             validation_reason="Validada manualmente pelo usuario",
         )
-        verb = "validadas"
+        verb = "validada(s)"
+        destination = "Validadas"
     elif action == "reject":
         updated_count = articles_qs.update(
             excluded=False,
             validation_status="REJECTED",
             validation_reason="Invalidada manualmente pelo usuario",
         )
-        verb = "invalidadas"
+        verb = "movida(s) para Rejeitadas"
+        destination = "Rejeitadas"
+    elif action == "review":
+        updated_count = articles_qs.update(
+            excluded=False,
+            validation_status="REVIEW",
+            validation_reason="Movida manualmente para revisao pelo usuario",
+        )
+        verb = "movida(s) para Revisar"
+        destination = "Revisar"
     else:
         updated_count = articles_qs.update(
             excluded=False,
             validation_status="ACCEPTED",
             validation_reason="Marcada como mantida pelo usuario",
         )
-        verb = "marcadas como mantidas"
+        verb = "mantida(s) em Validadas"
+        destination = "Validadas"
+
+    message = f"{updated_count} noticia(s) {verb}."
+    if action in {"validate", "keep", "reject", "review"} and updated_count:
+        message = f"{updated_count} noticia(s) atualizada(s) e movida(s) para a aba {destination}."
 
     if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
-        return JsonResponse({"updated": updated_count, "message": f"{updated_count} noticia(s) {verb}."})
+        return JsonResponse({"updated": updated_count, "message": message})
 
-    messages.success(request, f"{updated_count} noticia(s) {verb}.")
+    messages.success(request, message)
     redirect_url = reverse("client_news", args=[client_id])
     return_query = request.POST.get("return_query") or ""
     return redirect(f"{redirect_url}?{return_query}" if return_query else redirect_url)

@@ -126,6 +126,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .filter-form select, .filter-form input { margin: 0; }
 .page-size-form { margin-bottom: 1.5rem; }
 .bulk-actions { display: none; margin-bottom: 1rem; }
+.quick-review-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; min-width: 210px; }
+.quick-review-actions .button { min-height: 30px; padding: 0.38rem 0.58rem; font-size: 0.8rem; }
 .empty-state { padding: 3rem 1.5rem; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: var(--surface); text-align: center; }
 .empty-state p { margin: 0 0 1rem; color: var(--muted-strong); }
 .compact { padding: 1.5rem; }
