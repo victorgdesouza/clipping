@@ -25,6 +25,7 @@ from newsclip.tasks import fetch_news_task
 from newsclip.templatetags.source_extras import domain
 from newsclip.utils import (
     build_essential_source_queries,
+    canonicalize_source_name,
     deduplicate_articles_for_display,
     legacy_keyword_identity_terms,
     record_endpoint_failure,
@@ -40,6 +41,30 @@ class DomainFilterTests(TestCase):
         """domain filter deve extrair o host sem o prefixo www."""
         url = "https://www.exemplo.com/algum"
         self.assertEqual(domain(url), "exemplo.com")
+
+    def test_source_name_is_canonicalized_from_alias_or_article_url(self):
+        self.assertEqual(canonicalize_source_name("g1.globo.com"), "G1")
+        self.assertEqual(
+            canonicalize_source_name(
+                "Google News",
+                "https://g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba/noticia/teste",
+            ),
+            "G1",
+        )
+        self.assertEqual(canonicalize_source_name("diariodaregiao.com.br"), "Diário da Região")
+        self.assertEqual(
+            canonicalize_source_name(
+                "record.r7.com",
+                "https://record.r7.com/record-rio-preto/balanco-geral-interior",
+            ),
+            "Record Rio Preto",
+        )
+        self.assertEqual(
+            canonicalize_source_name("record.r7.com", "https://record.r7.com/programa-nacional"),
+            "record.r7.com",
+        )
+
+        self.assertEqual(canonicalize_source_name("Fonte Setorial Nova"), "Fonte Setorial Nova")
 
     def test_sensitive_log_text_is_redacted(self):
         message = (
@@ -74,6 +99,18 @@ class NewsCollectionRecallTests(TestCase):
         self.assertIsNone(duplicate)
         self.assertIsNotNone(second_client)
         self.assertEqual(Article.objects.filter(url=url).count(), 2)
+
+    def test_new_article_is_saved_with_canonical_source(self):
+        article = save_article(
+            self.client_a,
+            "Notícia sobre São Paulo publicada pelo portal",
+            "https://g1.globo.com/sp/sao-jose-do-rio-preto-aracatuba/noticia/canonica",
+            None,
+            "g1.globo.com",
+        )
+
+        self.assertIsNotNone(article)
+        self.assertEqual(article.source, "G1")
 
     def test_same_story_from_same_source_is_saved_only_once(self):
         first = save_article(

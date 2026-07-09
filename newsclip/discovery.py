@@ -22,6 +22,7 @@ from newsclip.models import Article, DiscoveryResult, DiscoveryRun, Source, Sour
 from newsclip.utils import (
     build_client_search_queries,
     audit_relevance_decision,
+    canonicalize_source_name,
     client_positive_terms,
     contains_excluded_term,
     record_endpoint_failure,
@@ -175,7 +176,7 @@ def _source_for_result(result: SearchResult, provider: str) -> tuple[Source, boo
     created = source is None
     if created:
         source = Source.objects.create(
-            name=domain,
+            name=canonicalize_source_name(domain, result.url) or domain,
             domain=domain,
             url=origin_from_url(result.url),
             source_type="DISCOVERED",
@@ -189,12 +190,15 @@ def _source_for_result(result: SearchResult, provider: str) -> tuple[Source, boo
             last_discovered_at=now,
         )
     else:
+        canonical_name = canonicalize_source_name(source.name or domain, result.url)
         updates = {
             "domain": source.domain or domain,
             "last_discovered_at": now,
             "discovery_count": source.discovery_count + 1,
             "confidence_score": min(100, source.confidence_score + 10),
         }
+        if source.discovered_automatically and canonical_name and source.name != canonical_name:
+            updates["name"] = canonical_name
         Source.objects.filter(pk=source.pk).update(**updates)
         for field, value in updates.items():
             setattr(source, field, value)

@@ -158,6 +158,59 @@ TRACKING_QUERY_KEYS = {
     "utm_campaign", "utm_content", "utm_medium", "utm_source", "utm_term",
 }
 
+SOURCE_DOMAIN_CANONICAL_NAMES = {
+    "g1.globo.com": "G1",
+    "diariodaregiao.com.br": "Diário da Região",
+    "gazetaderiopreto.com.br": "Gazeta de Rio Preto",
+    "regiaonoroeste.com": "Região Noroeste",
+    "riopreto.sp.gov.br": "Prefeitura de Rio Preto",
+}
+
+SOURCE_URL_PATH_CANONICAL_NAMES = {
+    ("bandtv.band.uol.com.br", "/tv/paulista"): "Band Paulista",
+    ("record.r7.com", "/record-rio-preto"): "Record Rio Preto",
+}
+
+SOURCE_NAME_CANONICAL_NAMES = {
+    "g1": "G1",
+    "g1 rio preto e aracatuba": "G1",
+    "diario da regiao": "Diário da Região",
+    "gazeta de rio preto": "Gazeta de Rio Preto",
+    "regiao noroeste": "Região Noroeste",
+    "prefeitura de sao jose do rio preto": "Prefeitura de Rio Preto",
+    "prefeitura de rio preto": "Prefeitura de Rio Preto",
+    "band paulista": "Band Paulista",
+    "record rio preto": "Record Rio Preto",
+}
+
+
+def source_hostname(value: str) -> str:
+    """Extrai o host de uma URL ou domínio informado por um provedor."""
+    clean = (value or "").strip()
+    if not clean:
+        return ""
+    parsed = urlsplit(clean if "://" in clean else f"https://{clean}")
+    return (parsed.hostname or "").casefold().removeprefix("www.")
+
+
+def canonicalize_source_name(source: str, url: str = "") -> str:
+    """Converte aliases e domínios conhecidos no nome único exibido ao usuário."""
+    raw_source = re.sub(r"\s+", " ", (source or "")).strip()
+    article_parts = urlsplit((url or "").strip())
+    article_host = source_hostname(url)
+    article_path = (article_parts.path or "").casefold()
+    for (known_domain, path_fragment), canonical_name in SOURCE_URL_PATH_CANONICAL_NAMES.items():
+        if article_host == known_domain and path_fragment in article_path:
+            return canonical_name
+
+    for host in (source_hostname(url), source_hostname(raw_source)):
+        for known_domain, canonical_name in SOURCE_DOMAIN_CANONICAL_NAMES.items():
+            if host == known_domain or host.endswith(f".{known_domain}"):
+                return canonical_name
+
+    normalized_source = normalize_match_text(raw_source)
+    return SOURCE_NAME_CANONICAL_NAMES.get(normalized_source, raw_source)
+
 
 def normalize_match_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value or "")
@@ -854,8 +907,8 @@ def save_article(client, title, url, raw_date, source, content_text=None, provid
             dt = None
 
     processed_title = (title or "")[:Article._meta.get_field('title').max_length]
-    processed_source = (source or "")[:Article._meta.get_field('source').max_length]
     processed_url = canonicalize_article_url(url)
+    processed_source = canonicalize_source_name(source, processed_url)[:Article._meta.get_field('source').max_length]
 
     validation = validate_article_candidate(
         client, processed_title, content_text or "", processed_url, processed_source, provider=provider
