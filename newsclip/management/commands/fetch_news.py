@@ -22,6 +22,7 @@ from django.utils import timezone as dj_timezone
 from django.db import IntegrityError
 
 from newsclip.discovery import discover_client_sources, fetch_sitemap_endpoint
+from newsclip.google_cse import fetch_google_cse
 from newsclip.models import Client, Article, Source, SourceEndpoint, FetchLog
 from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.source_seeds import ESSENTIAL_NEWS_SOURCES
@@ -280,6 +281,18 @@ class Command(BaseCommand):
                             ),
                         )
                     ] = "GoogleRSS fontes essenciais"
+
+                if getattr(settings, "GOOGLE_CSE_ENABLED", True):
+                    if getattr(settings, "GOOGLE_API_KEY", "") and getattr(settings, "GOOGLE_CSE_ID", ""):
+                        futures_map[
+                            executor.submit(
+                                fetch_google_cse,
+                                client,
+                                since_dt,
+                                self.log,
+                                quick=quick_run,
+                            )
+                        ] = "Google CSE"
 
                 if not quick_run and getattr(settings, "GDELT_ENABLED", True):
                     futures_map[executor.submit(fetch_gdelt, client, kws, since_dt, self.log)] = "GDELT"

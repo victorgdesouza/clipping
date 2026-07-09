@@ -6,7 +6,6 @@ import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pathlib import Path
 from collections import Counter
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone as dj_timezone
@@ -57,66 +56,6 @@ def generate_summary(text: str, num_sentences: int = 3) -> str:
     if summary and not summary.endswith('.'): # Adicionado para garantir que termina com ponto se não vazio
         summary += '.'
     return summary
-
-
-# —————————————————————————————————————————
-# 2) Busca no Google via GPT + googlesearch
-# —————————————————————————————————————————
-
-# —————————————————————————————————————————
-# 2) Busca no Google via GPT + googlesearch
-# —————————————————————————————————————————
-
-import requests
-
-def search_google_api(query, api_key, cse_id, num_results=10, **kwargs):
-    """
-    Realiza busca usando a Google Custom Search JSON API.
-    """
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        'q': query,
-        'key': api_key,
-        'cx': cse_id,
-        'num': min(num_results, 10), # API limita a 10 por página
-        'lr': 'lang_pt',
-        **kwargs
-    }
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        items = data.get('items', [])
-        return [item['link'] for item in items]
-    except Exception as e:
-        print(f"Erro na Google API: {e}")
-        return []
-
-def buscar_com_google(queries: list[str], num_results: int = 10) -> list[str]:
-    urls = []
-    
-    # Verificar se temos chaves de API configuradas
-    api_key = getattr(settings, 'GOOGLE_API_KEY', None)
-    cse_id = getattr(settings, 'GOOGLE_CSE_ID', None)
-    use_api = bool(api_key and cse_id)
-
-    for q in queries:
-        try:
-            if use_api:
-                # Usar API Oficial
-                print(f"Buscando via Google API: {q}")
-                results = search_google_api(q, api_key, cse_id, num_results=num_results)
-                urls.extend(results)
-            else:
-                # Fallback para Scraping (googlesearch-python)
-                print(f"Buscando via Scraping (googlesearch): {q}")
-                for url_result in search(q, num_results=num_results, lang="pt"):
-                    urls.append(url_result)
-                    
-        except Exception as e:
-            print(f"Erro ao buscar no Google para query '{q}': {e}")
-            
-    return list(set(urls)) # Remove duplicatas
 
 
 # —————————————————————————————————————————

@@ -18,6 +18,7 @@ from newsclip.discovery import (
     parse_sitemap,
     profile_source,
 )
+from newsclip.google_cse import fetch_google_cse
 from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, FetchLog, GeneratedReport, Source, SourceEndpoint
 from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.signals import update_search_vector
@@ -535,6 +536,66 @@ class AdditionalProvidersTests(TestCase):
         self.client_record = Client.objects.create(name="Cliente Regional", keywords="mobilidade")
         self.since = timezone.now() - timedelta(days=30)
 
+    @override_settings(
+        GOOGLE_API_KEY="google-test",
+        GOOGLE_CSE_ID="cse-test",
+        GOOGLE_CSE_ENABLED=True,
+        GOOGLE_CSE_QUICK_MAX_QUERIES=1,
+        GOOGLE_CSE_RESULTS_PER_QUERY=10,
+    )
+    @patch("newsclip.google_cse.requests.get")
+    def test_google_cse_saves_result_and_run_metrics(self, get_mock):
+        response = Mock(status_code=200)
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "items": [{
+                "title": "Cliente Regional apresenta novo plano de mobilidade",
+                "link": "https://g1.globo.com/sp/rio-preto/noticia/plano-mobilidade",
+                "displayLink": "g1.globo.com",
+                "snippet": "Cliente Regional detalha investimentos em mobilidade.",
+                "pagemap": {
+                    "metatags": [{"article:published_time": "2026-07-08T10:00:00-03:00"}]
+                },
+            }]
+        }
+        get_mock.return_value = response
+
+        saved = fetch_google_cse(self.client_record, self.since, quick=True)
+
+        self.assertEqual(saved, 1)
+        article = Article.objects.get(client=self.client_record)
+        self.assertEqual(article.provider, "GOOGLE_CSE")
+        self.assertEqual(article.source, "G1")
+        run = DiscoveryRun.objects.get(provider="GOOGLE_CSE")
+        self.assertEqual(run.status, "SUCCESS")
+        self.assertEqual(run.queries_count, 1)
+        self.assertEqual(run.results_count, 1)
+        params = get_mock.call_args.kwargs["params"]
+        self.assertEqual(params["key"], "google-test")
+        self.assertEqual(params["cx"], "cse-test")
+        self.assertIn("dateRestrict", params)
+
+    @override_settings(
+        GOOGLE_API_KEY="google-test",
+        GOOGLE_CSE_ID="cse-test",
+        GOOGLE_CSE_ENABLED=True,
+        GOOGLE_CSE_QUICK_MAX_QUERIES=1,
+    )
+    @patch("newsclip.google_cse.requests.get")
+    def test_google_cse_quota_error_does_not_stop_other_sources(self, get_mock):
+        response = Mock(status_code=429)
+        response.raise_for_status.side_effect = AssertionError("não deve chamar raise_for_status em 429")
+        get_mock.return_value = response
+        log_mock = Mock()
+
+        saved = fetch_google_cse(self.client_record, self.since, log=log_mock, quick=True)
+
+        self.assertEqual(saved, 0)
+        run = DiscoveryRun.objects.get(provider="GOOGLE_CSE")
+        self.assertEqual(run.status, "ERROR")
+        self.assertIn("limite de cota", run.error_message)
+        log_mock.assert_called_once()
+
     @patch("newsclip.management.commands.fetch_news.NEWSDATA_KEY", "newsdata-test")
     @patch("newsclip.management.commands.fetch_news.MAX_NEWSDATA_QUERY_TERMS", 2)
     @patch("newsclip.management.commands.fetch_news.requests.get")
@@ -805,6 +866,37 @@ class AutomaticDiscoveryTests(TestCase):
         self.assertEqual(kwargs["max_queries"], 3)
         self.assertEqual(kwargs["results_per_query"], 10)
         self.assertEqual(kwargs["profile_limit"], 0)
+
+    @override_settings(
+        GOOGLE_API_KEY="google-test",
+        GOOGLE_CSE_ID="cse-test",
+        GOOGLE_CSE_ENABLED=True,
+        GDELT_ENABLED=False,
+        YOUTUBE_API_KEY="",
+    )
+    @patch("newsclip.management.commands.fetch_news.fetch_google_cse", return_value=0)
+    @patch("newsclip.management.commands.fetch_news.Command.fetch_google_rss", return_value=0)
+    @patch("newsclip.management.commands.fetch_news.discover_client_sources")
+    def test_quick_fetch_runs_google_cse_in_main_pipeline(
+        self,
+        discovery_mock,
+        _rss_mock,
+        cse_mock,
+    ):
+        discovery_mock.return_value = {
+            "queries": 0,
+            "results": 0,
+            "relevant": 0,
+            "articles": 0,
+            "new_sources": 0,
+            "profiled": 0,
+            "skipped": 0,
+        }
+
+        call_command("fetch_news", "--client-id", str(self.client_record.pk), "--quick")
+
+        cse_mock.assert_called_once()
+        self.assertIs(cse_mock.call_args.kwargs["quick"], True)
 
     @override_settings(
         DISCOVERY_AUTO_ACTIVATE_SOURCES=True,
