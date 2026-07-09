@@ -111,22 +111,28 @@
     }
 
     const bulkActions = document.getElementById('bulk-actions');
-    const checkboxes = document.querySelectorAll('.select-item');
     const selectAll = document.getElementById('select-all');
     const form = document.getElementById('bulk-form');
+    const currentStatus = "{{ status_filter }}";
+    const feedback = document.getElementById('review-feedback');
+    const tableBody = document.getElementById('news-table-body');
+
+    function getCheckboxes() {
+      return Array.from(document.querySelectorAll('.select-item'));
+    }
 
     function updateBulkActions() {
-      const anyChecked = Array.from(checkboxes).some(chk => chk.checked);
+      const anyChecked = getCheckboxes().some(chk => chk.checked);
       bulkActions.style.display = anyChecked ? 'block' : 'none';
     }
 
-    checkboxes.forEach(chk => {
+    getCheckboxes().forEach(chk => {
       chk.addEventListener('change', updateBulkActions);
     });
 
     if (selectAll) {
       selectAll.addEventListener('change', function () {
-        checkboxes.forEach(chk => chk.checked = selectAll.checked);
+        getCheckboxes().forEach(chk => chk.checked = selectAll.checked);
         updateBulkActions();
       });
     }
@@ -148,19 +154,136 @@
       form.querySelectorAll('.quick-selected-article').forEach(input => input.remove());
     }
 
+    function showReviewFeedback(message, isError = false) {
+      if (!feedback) return;
+      feedback.textContent = message;
+      feedback.className = isError ? 'message message-error' : 'message message-success';
+      feedback.style.display = 'block';
+    }
+
+    function updateTabCount(status, delta) {
+      const counter = document.querySelector(`[data-status-count="${status}"]`);
+      if (!counter) return;
+      const current = parseInt(counter.dataset.count || counter.textContent || '0', 10) || 0;
+      const next = Math.max(0, current + delta);
+      counter.dataset.count = String(next);
+      counter.textContent = String(next);
+    }
+
+    function ensureEmptyRow() {
+      if (!tableBody) return;
+      const visibleRows = tableBody.querySelectorAll('tr[data-id]');
+      const existingEmpty = tableBody.querySelector('.empty-message-row');
+      if (visibleRows.length === 0 && !existingEmpty) {
+        const emptyRow = document.createElement('tr');
+        emptyRow.className = 'empty-message-row';
+        emptyRow.innerHTML = '<td colspan="{% if status_filter != 'accepted' %}5{% else %}4{% endif %}" class="empty-message">Nenhum artigo encontrado.</td>';
+        tableBody.appendChild(emptyRow);
+      }
+    }
+
+    function applyActionResult(data) {
+      const ids = data.updated_ids || [];
+      const shouldLeaveCurrentTab = data.excluded || (data.target_status && data.target_status !== currentStatus);
+      if (shouldLeaveCurrentTab) {
+        ids.forEach(id => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (row) {
+            row.remove();
+          }
+        });
+        updateTabCount(currentStatus, -ids.length);
+        if (data.target_status) {
+          updateTabCount(data.target_status, ids.length);
+        }
+        ensureEmptyRow();
+      } else {
+        ids.forEach(id => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (row) {
+            row.classList.remove('is-updating');
+            row.querySelectorAll('button').forEach(button => button.disabled = false);
+            row.querySelectorAll('.select-item').forEach(chk => chk.checked = false);
+          }
+        });
+      }
+      if (selectAll) selectAll.checked = false;
+      updateBulkActions();
+      showReviewFeedback(data.message || 'Alteração salva.');
+    }
+
+    function sendReviewAction(actionValue, ids, buttons = []) {
+      if (!ids.length) {
+        alert('Selecione pelo menos uma noticia!');
+        return;
+      }
+
+      const formData = new FormData(form);
+      formData.delete('ids[]');
+      formData.delete('selected_articles');
+      formData.delete('action');
+      formData.append('action', actionValue);
+      ids.forEach(id => formData.append('selected_articles', id));
+
+      ids.forEach(id => {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (row) {
+          row.classList.add('is-updating');
+          row.querySelectorAll('button').forEach(button => button.disabled = true);
+        }
+      });
+      buttons.forEach(button => {
+        if (button) {
+          button.disabled = true;
+          button.dataset.originalText = button.textContent;
+          button.textContent = 'Salvando...';
+        }
+      });
+
+      fetch(form.action, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+      })
+        .then(response => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then(data => {
+          applyActionResult(data);
+        })
+        .catch(err => {
+          console.error('Review action error:', err);
+          ids.forEach(id => {
+            const row = document.querySelector(`tr[data-id="${id}"]`);
+            if (row) {
+              row.classList.remove('is-updating');
+              row.querySelectorAll('button').forEach(button => button.disabled = false);
+            }
+          });
+          buttons.forEach(button => {
+            if (button) {
+              button.disabled = false;
+              button.textContent = button.dataset.originalText || button.textContent;
+            }
+          });
+          showReviewFeedback('Não foi possível salvar a alteração. Tente novamente.', true);
+        });
+    }
+
     function submitBulkAction(actionValue) {
       clearQuickInputs();
       setAction(actionValue);
 
-      if (!Array.from(checkboxes).some(chk => chk.checked)) {
-        alert('Selecione pelo menos uma noticia!');
-        return;
-      }
-      form.submit();
+      const selectedIds = getCheckboxes().filter(chk => chk.checked).map(chk => chk.value);
+      sendReviewAction(actionValue, selectedIds);
     }
 
     function submitQuickAction(actionValue, articleId, button) {
-      checkboxes.forEach(chk => chk.checked = false);
+      getCheckboxes().forEach(chk => chk.checked = false);
       updateBulkActions();
       clearQuickInputs();
       setAction(actionValue);
@@ -172,11 +295,7 @@
       selectedArticle.className = 'quick-selected-article';
       form.appendChild(selectedArticle);
 
-      if (button) {
-        button.disabled = true;
-        button.textContent = 'Salvando...';
-      }
-      form.submit();
+      sendReviewAction(actionValue, [articleId], [button]);
     }
 
     const bulkButtons = {
@@ -222,15 +341,15 @@
 <div class="action-bar quality-tabs">
   <a class="button {% if status_filter == 'accepted' %}{% else %}button-ghost{% endif %}"
      href="?status=accepted&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
-    Validadas ({{ status_counts.accepted|default:0 }})
+    Validadas (<span data-status-count="accepted" data-count="{{ status_counts.accepted|default:0 }}">{{ status_counts.accepted|default:0 }}</span>)
   </a>
   <a class="button {% if status_filter == 'review' %}{% else %}button-ghost{% endif %}"
      href="?status=review&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
-    Revisar ({{ status_counts.review|default:0 }})
+    Revisar (<span data-status-count="review" data-count="{{ status_counts.review|default:0 }}">{{ status_counts.review|default:0 }}</span>)
   </a>
   <a class="button {% if status_filter == 'rejected' %}{% else %}button-ghost{% endif %}"
      href="?status=rejected&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
-    Rejeitadas ({{ status_counts.rejected|default:0 }})
+    Rejeitadas (<span data-status-count="rejected" data-count="{{ status_counts.rejected|default:0 }}">{{ status_counts.rejected|default:0 }}</span>)
   </a>
 </div>
 
@@ -249,6 +368,7 @@
 <form method="post" action="{% url 'bulk_update_news' client.id %}" id="bulk-form">
   {% csrf_token %}
   <input type="hidden" name="return_query" value="{{ return_query }}">
+  <div id="review-feedback" class="message message-success" style="display: none;"></div>
   <div class="action-bar bulk-actions" id="bulk-actions">
     {% if status_filter != "accepted" %}
       <button type="button" id="btn-validate-selected" class="button">
@@ -282,7 +402,7 @@
         <th>Ações</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody id="news-table-body">
       {% for art in articles %}
       <tr data-id="{{ art.id }}" class="{% if art.excluded %}excluded{% elif art.topic %}kept{% endif %}">
         <td><input type="checkbox" name="ids[]" value="{{ art.id }}" class="select-item"></td>

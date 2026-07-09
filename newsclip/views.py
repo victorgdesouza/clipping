@@ -545,10 +545,12 @@ def bulk_update_news(request, client_id):
         return redirect(reverse("client_news", args=[client_id]))
 
     articles_qs = Article.objects.filter(client=client, id__in=ids)
+    updated_ids = list(articles_qs.values_list("id", flat=True))
     if action == "exclude":
         updated_count = articles_qs.update(excluded=True)
         verb = "excluida(s)"
         destination = "excluidas"
+        target_status = None
     elif action == "validate":
         updated_count = articles_qs.update(
             excluded=False,
@@ -557,6 +559,7 @@ def bulk_update_news(request, client_id):
         )
         verb = "validada(s)"
         destination = "Validadas"
+        target_status = "accepted"
     elif action == "reject":
         updated_count = articles_qs.update(
             excluded=False,
@@ -565,6 +568,7 @@ def bulk_update_news(request, client_id):
         )
         verb = "movida(s) para Rejeitadas"
         destination = "Rejeitadas"
+        target_status = "rejected"
     elif action == "review":
         updated_count = articles_qs.update(
             excluded=False,
@@ -573,6 +577,7 @@ def bulk_update_news(request, client_id):
         )
         verb = "movida(s) para Revisar"
         destination = "Revisar"
+        target_status = "review"
     else:
         updated_count = articles_qs.update(
             excluded=False,
@@ -581,13 +586,23 @@ def bulk_update_news(request, client_id):
         )
         verb = "mantida(s) em Validadas"
         destination = "Validadas"
+        target_status = "accepted"
 
     message = f"{updated_count} noticia(s) {verb}."
     if action in {"validate", "keep", "reject", "review"} and updated_count:
         message = f"{updated_count} noticia(s) atualizada(s) e movida(s) para a aba {destination}."
 
     if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
-        return JsonResponse({"updated": updated_count, "message": message})
+        return JsonResponse(
+            {
+                "updated": updated_count,
+                "updated_ids": updated_ids,
+                "action": action,
+                "target_status": target_status,
+                "excluded": action == "exclude",
+                "message": message,
+            }
+        )
 
     messages.success(request, message)
     redirect_url = reverse("client_news", args=[client_id])

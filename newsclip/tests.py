@@ -1000,7 +1000,8 @@ class ClientAccessTests(TestCase):
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Revisar (1)")
+        self.assertContains(response, 'data-status-count="review"')
+        self.assertContains(response, 'data-count="1"')
         self.assertContains(response, "Cliente Teste em noticia ambigua")
         self.assertContains(response, "Identidade fraca + contexto")
 
@@ -1048,6 +1049,8 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "<th>Ações</th>", html=True)
         self.assertContains(response, 'data-action="validate"')
         self.assertContains(response, 'data-action="reject"')
+        self.assertContains(response, 'id="review-feedback"')
+        self.assertContains(response, 'data-status-count="accepted"')
 
         response = self.client.post(
             reverse("bulk_update_news", args=[self.client_record.pk]),
@@ -1056,9 +1059,12 @@ class ClientAccessTests(TestCase):
                 "selected_articles": [str(review_article.pk)],
                 "return_query": "status=review",
             },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
 
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["target_status"], "accepted")
+        self.assertEqual(response.json()["updated_ids"], [review_article.pk])
         review_article.refresh_from_db()
         self.assertEqual(review_article.validation_status, "ACCEPTED")
         self.assertEqual(review_article.validation_reason, "Validada manualmente pelo usuario")
