@@ -479,6 +479,19 @@ class CountryBullsRelevanceTests(TestCase):
         self.assertNotEqual(result["status"], "ACCEPTED")
         self.assertLess(result["score"], 70)
 
+    def test_full_name_in_snippet_with_context_gets_review_priority(self):
+        result = validate_article_candidate(
+            self.client_record,
+            "Evento regional confirma atrações para o fim de semana",
+            "A programação cita Rio Preto Country Bulls, rodeio e evento.",
+            "https://portalregional.example/evento",
+            "Portal Regional",
+            provider="GOOGLE_RSS",
+        )
+
+        self.assertEqual(result["status"], "REVIEW")
+        self.assertGreaterEqual(result["score"], 60)
+
 
 class AdditionalProvidersTests(TestCase):
     def setUp(self):
@@ -990,6 +1003,108 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "Revisar (1)")
         self.assertContains(response, "Cliente Teste em noticia ambigua")
         self.assertContains(response, "Identidade fraca + contexto")
+
+    def test_owner_can_validate_and_invalidate_selected_news(self):
+        review_article = Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste em noticia para validar",
+            url="https://jornal.example/validar",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="REVIEW",
+            relevance_score=55,
+            validation_reason="Pendente",
+            dedup_key="manual-validate",
+        )
+        accepted_article = Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste em noticia para invalidar",
+            url="https://jornal.example/invalidar",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="ACCEPTED",
+            relevance_score=90,
+            validation_reason="Aceita",
+            dedup_key="manual-reject",
+        )
+        rejected_article = Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste em noticia rejeitada para manter",
+            url="https://jornal.example/manter",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="REJECTED",
+            relevance_score=20,
+            validation_reason="Rejeitada automaticamente",
+            dedup_key="manual-keep",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Validar selecionadas")
+        self.assertContains(response, "Invalidar selecionadas")
+
+        response = self.client.post(
+            reverse("bulk_update_news", args=[self.client_record.pk]),
+            {
+                "action": "validate",
+                "ids[]": [str(review_article.pk)],
+                "return_query": "status=review",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        review_article.refresh_from_db()
+        self.assertEqual(review_article.validation_status, "ACCEPTED")
+        self.assertEqual(review_article.validation_reason, "Validada manualmente pelo usuario")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+        self.assertNotContains(response, "Cliente Teste em noticia para validar")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
+        self.assertContains(response, "Cliente Teste em noticia para validar")
+
+        response = self.client.post(
+            reverse("bulk_update_news", args=[self.client_record.pk]),
+            {
+                "action": "reject",
+                "ids[]": [str(accepted_article.pk)],
+                "return_query": "status=accepted",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        accepted_article.refresh_from_db()
+        self.assertEqual(accepted_article.validation_status, "REJECTED")
+        self.assertEqual(accepted_article.validation_reason, "Invalidada manualmente pelo usuario")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
+        self.assertNotContains(response, "Cliente Teste em noticia para invalidar")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=rejected")
+        self.assertContains(response, "Cliente Teste em noticia para invalidar")
+
+        response = self.client.post(
+            reverse("bulk_update_news", args=[self.client_record.pk]),
+            {
+                "action": "keep",
+                "ids[]": [str(rejected_article.pk)],
+                "return_query": "status=rejected",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        rejected_article.refresh_from_db()
+        self.assertEqual(rejected_article.validation_status, "ACCEPTED")
+        self.assertEqual(rejected_article.validation_reason, "Marcada como mantida pelo usuario")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=rejected")
+        self.assertNotContains(response, "Cliente Teste em noticia rejeitada para manter")
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
+        self.assertContains(response, "Cliente Teste em noticia rejeitada para manter")
 
     def test_owner_can_save_client_and_reprocess_pending_articles(self):
         client_record = Client.objects.create(name="Fábio Candido")

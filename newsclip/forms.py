@@ -41,14 +41,14 @@ class ClientForm(forms.ModelForm):
                 attrs={
                     "rows": 2,
                     "class": "auto-expand",
-                    "placeholder": "Ex: Country Bulls, Rio Preto Country Bulls Oficial, @riopretocountrybullsoficial",
+                    "placeholder": "Ex: nome abreviado, apelido publico, nome com cargo, @perfiloficial",
                 }
             ),
             "context_terms": forms.Textarea(
                 attrs={
                     "rows": 2,
                     "class": "auto-expand",
-                    "placeholder": "Ex: Paulo Emilio, Sao Jose do Rio Preto, rodeio, arena, ingressos, show...",
+                    "placeholder": "Ex: cidade, setor de atuacao, cargo, evento, produto, tema relacionado...",
                 }
             ),
             "keywords": forms.Textarea(
@@ -77,10 +77,10 @@ class ClientForm(forms.ModelForm):
             "youtube": forms.TextInput(attrs={"placeholder": "@canal"}),
         }
         help_texts = {
-            "name_variations": "Termos fortes de identidade. Uma noticia com estes termos tem alta chance de ser relevante.",
-            "context_terms": "Termos de apoio. Sozinhos nao aprovam uma noticia; precisam aparecer combinados com a identidade do cliente.",
-            "keywords": "Campo complementar/legado. Estes termos tambem sao tratados como contexto, nunca como aprovacao automatica.",
-            "excluded_keywords": "Separe por virgula os termos que tornam uma noticia irrelevante.",
+            "name_variations": "Como o cliente pode aparecer na noticia: abreviacoes, nome oficial, apelidos publicos, cargos ou perfis oficiais.",
+            "context_terms": "Assuntos que ajudam a confirmar relevancia. Sozinhos nao aprovam; servem para diferenciar noticias parecidas.",
+            "keywords": "Termos extras de apoio. Use para temas relacionados, nao para palavras muito genericas.",
+            "excluded_keywords": "Termos que indicam que a noticia nao pertence ao cliente, como cidade, pessoa ou assunto homonimo.",
             "domains": "Aceita dominio ou URL completa. URLs sao normalizadas para host e caminho opcional.",
             "instagram": "Opcional. Use o perfil publico do cliente.",
             "x": "Opcional. Use o perfil publico do cliente.",

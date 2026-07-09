@@ -133,14 +133,14 @@
 
     updateBulkActions();
 
-    document.getElementById('btn-exclude-selected').onclick = function () {
+    function submitBulkAction(actionValue) {
       const prevInput = form.querySelector('input[name="action"]');
       if (prevInput) prevInput.remove();
 
       let action = document.createElement('input');
       action.type = 'hidden';
       action.name = 'action';
-      action.value = 'exclude';
+      action.value = actionValue;
       form.appendChild(action);
 
       if (!Array.from(checkboxes).some(chk => chk.checked)) {
@@ -148,24 +148,22 @@
         return;
       }
       form.submit();
+    }
+
+    const bulkButtons = {
+      'btn-exclude-selected': 'exclude',
+      'btn-keep-selected': 'keep',
+      'btn-validate-selected': 'validate',
+      'btn-reject-selected': 'reject'
     };
-
-    document.getElementById('btn-keep-selected').onclick = function () {
-      const prevInput = form.querySelector('input[name="action"]');
-      if (prevInput) prevInput.remove();
-
-      let action = document.createElement('input');
-      action.type = 'hidden';
-      action.name = 'action';
-      action.value = 'keep';
-      form.appendChild(action);
-
-      if (!Array.from(checkboxes).some(chk => chk.checked)) {
-        alert('Selecione pelo menos uma noticia!');
-        return;
+    Object.entries(bulkButtons).forEach(([buttonId, actionValue]) => {
+      const button = document.getElementById(buttonId);
+      if (button) {
+        button.onclick = function () {
+          submitBulkAction(actionValue);
+        };
       }
-      form.submit();
-    };
+    });
   });
 </script>
 
@@ -214,12 +212,23 @@
 
 <form method="post" action="{% url 'bulk_update_news' client.id %}" id="bulk-form">
   {% csrf_token %}
+  <input type="hidden" name="return_query" value="{{ return_query }}">
   <div class="action-bar bulk-actions" id="bulk-actions">
-    <button type="button" id="btn-exclude-selected" class="button button-danger">
-      Excluir selecionados
+    {% if status_filter != "accepted" %}
+      <button type="button" id="btn-validate-selected" class="button">
+        Validar selecionadas
+      </button>
+    {% endif %}
+    {% if status_filter != "rejected" %}
+      <button type="button" id="btn-reject-selected" class="button button-ghost">
+        Invalidar selecionadas
+      </button>
+    {% endif %}
+    <button type="button" id="btn-keep-selected" class="button button-ghost">
+      Manter selecionadas
     </button>
-    <button type="button" id="btn-keep-selected" class="button">
-      Marcar como mantidos
+    <button type="button" id="btn-exclude-selected" class="button button-danger">
+      Excluir selecionadas
     </button>
   </div>
   <table class="styled-table">

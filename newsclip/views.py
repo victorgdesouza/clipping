@@ -523,6 +523,7 @@ def client_news(request, client_id):
         "page_size_options": [10, 20, 50, 100],
         "sources_for_filter": distinct_sources,
         "sources": distinct_sources,
+        "return_query": request.GET.urlencode(),
     }
     return render(request, "newsclip/client_news.html", context)
 
@@ -537,7 +538,7 @@ def bulk_update_news(request, client_id):
     action = request.POST.get("action")
     ids = request.POST.getlist("ids[]") or request.POST.getlist("selected_articles")
 
-    if action not in ("exclude", "keep") or not ids:
+    if action not in ("exclude", "keep", "validate", "reject") or not ids:
         if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
             return JsonResponse({"error": "Parametros invalidos", "updated": 0}, status=400)
         messages.error(request, "Parametros invalidos ou nenhuma noticia selecionada.")
@@ -547,15 +548,35 @@ def bulk_update_news(request, client_id):
     if action == "exclude":
         updated_count = articles_qs.update(excluded=True)
         verb = "excluidas"
+    elif action == "validate":
+        updated_count = articles_qs.update(
+            excluded=False,
+            validation_status="ACCEPTED",
+            validation_reason="Validada manualmente pelo usuario",
+        )
+        verb = "validadas"
+    elif action == "reject":
+        updated_count = articles_qs.update(
+            excluded=False,
+            validation_status="REJECTED",
+            validation_reason="Invalidada manualmente pelo usuario",
+        )
+        verb = "invalidadas"
     else:
-        updated_count = articles_qs.update(excluded=False)
+        updated_count = articles_qs.update(
+            excluded=False,
+            validation_status="ACCEPTED",
+            validation_reason="Marcada como mantida pelo usuario",
+        )
         verb = "marcadas como mantidas"
 
     if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
         return JsonResponse({"updated": updated_count, "message": f"{updated_count} noticia(s) {verb}."})
 
     messages.success(request, f"{updated_count} noticia(s) {verb}.")
-    return redirect(reverse("client_news", args=[client_id]))
+    redirect_url = reverse("client_news", args=[client_id])
+    return_query = request.POST.get("return_query") or ""
+    return redirect(f"{redirect_url}?{return_query}" if return_query else redirect_url)
 
 
 @require_POST

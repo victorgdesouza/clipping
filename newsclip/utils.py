@@ -660,9 +660,15 @@ def validate_article_candidate(
         or (visible_identity_matches and context_matches)
     )
     if not has_visible_identity and score >= 70:
-        if trusted_source and strong_identity_matches:
+        if trusted_source and (full_name_match or strong_identity_matches):
             score = max(score, 75)
             reason = f"{reason}; identidade forte no snippet de fonte confiavel"
+        elif full_name_match and context_matches:
+            score = 65
+            reason = f"{reason}; nome no conteudo/snippet com contexto: {context_matches[0]}"
+        elif strong_identity_matches and len(context_matches) >= 2:
+            score = 60
+            reason = f"{reason}; identidade no conteudo/snippet com contexto"
         else:
             score = 55
             reason = f"{reason}; identidade apenas no conteudo/snippet"
@@ -714,12 +720,17 @@ def revalidate_article(article, persist: bool = True, client=None) -> dict:
     return validation
 
 
+def is_manual_validation(article) -> bool:
+    reason = (getattr(article, "validation_reason", "") or "").casefold()
+    return "manualmente pelo usuario" in reason or "manual pelo usuario" in reason
+
+
 def revalidate_accepted_articles_for_client(client, limit: int = 250) -> int:
     articles = Article.objects.select_related("client").filter(
         client=client,
         excluded=False,
         validation_status="ACCEPTED",
-    ).order_by("-published_at", "-id")[:limit]
+    ).exclude(validation_reason__icontains="manualmente pelo usuario").order_by("-published_at", "-id")[:limit]
     changed = 0
     for article in articles:
         previous = article.validation_status
@@ -743,7 +754,7 @@ def revalidate_pending_articles_for_client(
         client=client,
         excluded=False,
         validation_status__in=selected_statuses,
-    ).order_by("-published_at", "-id")
+    ).exclude(validation_reason__icontains="manualmente pelo usuario").order_by("-published_at", "-id")
     if limit:
         articles = articles[:limit]
 

@@ -147,12 +147,12 @@ class Client(models.Model):
     name_variations = models.TextField(
         "Variacoes do nome",
         blank=True,
-        help_text="Separe por virgulas. Ex: Country Bulls, Rio Preto Bulls, @perfiloficial.",
+        help_text="Separe por virgulas. Ex: nome abreviado, apelido publico, nome com cargo, @perfiloficial.",
     )
     context_terms = models.TextField(
         "Termos de contexto",
         blank=True,
-        help_text="Separe por virgulas. Ex: rodeio, arena, ingressos, show, evento.",
+        help_text="Separe por virgulas. Ex: cidade, setor, cargo, evento, produto ou tema relacionado.",
     )
     excluded_keywords = models.TextField(
         "Termos excluidos",
