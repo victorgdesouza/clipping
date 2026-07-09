@@ -170,6 +170,14 @@
       counter.textContent = String(next);
     }
 
+    function setTabCount(status, value) {
+      const counter = document.querySelector(`[data-status-count="${status}"]`);
+      if (!counter) return;
+      const next = Math.max(0, parseInt(value || 0, 10) || 0);
+      counter.dataset.count = String(next);
+      counter.textContent = String(next);
+    }
+
     function ensureEmptyRow() {
       if (!tableBody) return;
       const visibleRows = tableBody.querySelectorAll('tr[data-id]');
@@ -207,6 +215,11 @@
           }
         });
       }
+      if (data.status_counts) {
+        setTabCount('accepted', data.status_counts.accepted);
+        setTabCount('review', data.status_counts.review);
+        setTabCount('rejected', data.status_counts.rejected);
+      }
       if (selectAll) selectAll.checked = false;
       updateBulkActions();
       showReviewFeedback(data.message || 'Alteração salva.');
@@ -218,10 +231,10 @@
         return;
       }
 
-      const formData = new FormData(form);
-      formData.delete('ids[]');
-      formData.delete('selected_articles');
-      formData.delete('action');
+      const csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+      const csrfToken = csrfInput ? csrfInput.value : getCookie('csrftoken');
+      const formData = new FormData();
+      formData.append('csrfmiddlewaretoken', csrfToken || '');
       formData.append('action', actionValue);
       ids.forEach(id => formData.append('selected_articles', id));
 
@@ -242,15 +255,27 @@
 
       fetch(form.action, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
-          'X-CSRFToken': getCookie('csrftoken'),
+          'Accept': 'application/json',
+          'X-CSRFToken': csrfToken || '',
           'X-Requested-With': 'XMLHttpRequest'
         },
         body: formData
       })
         .then(response => {
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return response.json();
+          return response.text().then(text => {
+            let data = null;
+            try {
+              data = text ? JSON.parse(text) : {};
+            } catch (parseError) {
+              throw new Error(response.ok ? 'Resposta inesperada do servidor.' : `HTTP ${response.status}`);
+            }
+            if (!response.ok) {
+              throw new Error(data.error || data.message || `HTTP ${response.status}`);
+            }
+            return data;
+          });
         })
         .then(data => {
           applyActionResult(data);
@@ -270,7 +295,7 @@
               button.textContent = button.dataset.originalText || button.textContent;
             }
           });
-          showReviewFeedback('Não foi possível salvar a alteração. Tente novamente.', true);
+          showReviewFeedback(`Não foi possível salvar a alteração. ${err.message || 'Tente novamente.'}`, true);
         });
     }
 

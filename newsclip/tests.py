@@ -1065,6 +1065,8 @@ class ClientAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["target_status"], "accepted")
         self.assertEqual(response.json()["updated_ids"], [review_article.pk])
+        self.assertEqual(response.json()["status_counts"]["accepted"], 2)
+        self.assertEqual(response.json()["status_counts"]["review"], 0)
         review_article.refresh_from_db()
         self.assertEqual(review_article.validation_status, "ACCEPTED")
         self.assertEqual(review_article.validation_reason, "Validada manualmente pelo usuario")

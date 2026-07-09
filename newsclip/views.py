@@ -593,6 +593,11 @@ def bulk_update_news(request, client_id):
         message = f"{updated_count} noticia(s) atualizada(s) e movida(s) para a aba {destination}."
 
     if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
+        status_counts = Article.objects.filter(client=client, excluded=False).aggregate(
+            accepted=Count("id", filter=Q(validation_status="ACCEPTED")),
+            review=Count("id", filter=Q(validation_status="REVIEW")),
+            rejected=Count("id", filter=Q(validation_status="REJECTED")),
+        )
         return JsonResponse(
             {
                 "updated": updated_count,
@@ -601,6 +606,7 @@ def bulk_update_news(request, client_id):
                 "target_status": target_status,
                 "excluded": action == "exclude",
                 "message": message,
+                "status_counts": status_counts,
             }
         )
 
