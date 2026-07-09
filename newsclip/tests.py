@@ -1044,6 +1044,9 @@ class ClientAccessTests(TestCase):
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "const bulkUpdateUrl = form ? form.getAttribute('action') : '';")
+        self.assertContains(response, "fetch(bulkUpdateUrl, {")
+        self.assertNotContains(response, "setAction(actionValue)")
         self.assertContains(response, "Validar selecionadas")
         self.assertContains(response, "Invalidar selecionadas")
         self.assertContains(response, "<th>Ações</th>", html=True)

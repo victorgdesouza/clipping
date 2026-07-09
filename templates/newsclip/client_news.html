@@ -113,6 +113,8 @@
     const bulkActions = document.getElementById('bulk-actions');
     const selectAll = document.getElementById('select-all');
     const form = document.getElementById('bulk-form');
+    // Um campo chamado "action" pode mascarar form.action no navegador.
+    const bulkUpdateUrl = form ? form.getAttribute('action') : '';
     const currentStatus = "{{ status_filter }}";
     const feedback = document.getElementById('review-feedback');
     const tableBody = document.getElementById('news-table-body');
@@ -138,21 +140,6 @@
     }
 
     updateBulkActions();
-
-    function setAction(actionValue) {
-      const prevInput = form.querySelector('input[name="action"]');
-      if (prevInput) prevInput.remove();
-
-      let action = document.createElement('input');
-      action.type = 'hidden';
-      action.name = 'action';
-      action.value = actionValue;
-      form.appendChild(action);
-    }
-
-    function clearQuickInputs() {
-      form.querySelectorAll('.quick-selected-article').forEach(input => input.remove());
-    }
 
     function showReviewFeedback(message, isError = false) {
       if (!feedback) return;
@@ -253,7 +240,7 @@
         }
       });
 
-      fetch(form.action, {
+      fetch(bulkUpdateUrl, {
         method: 'POST',
         credentials: 'same-origin',
         headers: {
@@ -300,9 +287,6 @@
     }
 
     function submitBulkAction(actionValue) {
-      clearQuickInputs();
-      setAction(actionValue);
-
       const selectedIds = getCheckboxes().filter(chk => chk.checked).map(chk => chk.value);
       sendReviewAction(actionValue, selectedIds);
     }
@@ -310,16 +294,6 @@
     function submitQuickAction(actionValue, articleId, button) {
       getCheckboxes().forEach(chk => chk.checked = false);
       updateBulkActions();
-      clearQuickInputs();
-      setAction(actionValue);
-
-      let selectedArticle = document.createElement('input');
-      selectedArticle.type = 'hidden';
-      selectedArticle.name = 'selected_articles';
-      selectedArticle.value = articleId;
-      selectedArticle.className = 'quick-selected-article';
-      form.appendChild(selectedArticle);
-
       sendReviewAction(actionValue, [articleId], [button]);
     }
 
