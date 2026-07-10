@@ -1134,7 +1134,61 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "Cliente Teste em noticia ambigua")
         self.assertContains(response, "Identidade fraca + contexto")
 
+    def test_review_queue_defaults_to_triage_priority_and_allows_date_sort(self):
+        now = timezone.now()
+        priority_article = Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste prioridade em portal regional",
+            url="https://g1.globo.com/sp/rio-preto/noticia/prioridade",
+            source="G1",
+            published_at=now - timedelta(days=3),
+            validation_status="REVIEW",
+            relevance_score=65,
+            validation_reason="Identidade forte em fonte regional",
+            dedup_key="triage-priority-g1",
+        )
+        same_score_unknown = Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste prioridade em blog desconhecido",
+            url="https://blog.example/prioridade",
+            source="Blog Desconhecido",
+            published_at=now - timedelta(days=1),
+            validation_status="REVIEW",
+            relevance_score=65,
+            validation_reason="Identidade forte em fonte desconhecida",
+            dedup_key="triage-priority-blog",
+        )
+        newest_low_score = Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste menção recente com baixa confiança",
+            url="https://outro.example/mencao",
+            source="Outro Portal",
+            published_at=now,
+            validation_status="REVIEW",
+            relevance_score=55,
+            validation_reason="Identidade apenas no conteúdo",
+            dedup_key="triage-low-score",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sort"], "priority")
+        self.assertContains(response, "Prioridade de revisão")
+        content = response.content.decode()
+        self.assertLess(content.index(priority_article.title), content.index(same_score_unknown.title))
+        self.assertLess(content.index(same_score_unknown.title), content.index(newest_low_score.title))
+
+        response = self.client.get(
+            reverse("client_news", args=[self.client_record.pk]) + "?status=review&sort=date-desc"
+        )
+        content = response.content.decode()
+        self.assertEqual(response.context["sort"], "date-desc")
+        self.assertLess(content.index(newest_low_score.title), content.index(same_score_unknown.title))
+        self.assertLess(content.index(same_score_unknown.title), content.index(priority_article.title))
     def test_owner_can_validate_and_invalidate_selected_news(self):
+
         review_article = Article.objects.create(
             client=self.client_record,
             title="Cliente Teste em noticia para validar",

@@ -26,10 +26,12 @@ from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob
 from .utils import (
     append_unique_terms,
     deduplicate_articles_for_display,
+    is_trusted_source,
     normalize_match_text,
     revalidate_accepted_articles_for_client,
     revalidate_pending_articles_for_client,
     split_terms,
+    strong_client_identity_terms,
 )
 
 
@@ -37,6 +39,70 @@ SUGGESTED_PUBLIC_ROLE_VARIATIONS = (
     "Prefeito de Rio Preto, Prefeito de São José do Rio Preto, "
     "Prefeito Fábio Candido, Prefeito Coronel Fábio Candido"
 )
+
+TRIAGE_PRIORITY_SOURCES = (
+    "G1",
+    "Diário da Região",
+    "Gazeta de Rio Preto",
+    "Região Noroeste",
+    "Band Paulista",
+    "Record Rio Preto",
+    "Prefeitura de Rio Preto",
+)
+TRIAGE_GROUP_STOP_WORDS = {
+    "a", "as", "com", "da", "das", "de", "do", "dos", "e", "em", "na", "nas",
+    "no", "nos", "o", "os", "para", "por", "que", "um", "uma",
+}
+
+
+def _review_score_band(score):
+    score = int(score or 0)
+    if 60 <= score <= 69:
+        return 0
+    if score >= 70:
+        return 1
+    if 50 <= score <= 59:
+        return 2
+    return 3
+
+
+def sort_review_articles_by_priority(articles, client):
+    identity_terms = [
+        normalize_match_text(term)
+        for term in strong_client_identity_terms(client)
+        if normalize_match_text(term)
+    ]
+    source_ranks = {
+        normalize_match_text(source): rank
+        for rank, source in enumerate(TRIAGE_PRIORITY_SOURCES)
+    }
+
+    def priority_key(article):
+        score = int(article.relevance_score or 0)
+        visible_text = normalize_match_text(f"{article.title} {article.url} {article.source}")
+        identity_visible = any(term in visible_text for term in identity_terms)
+        trusted = is_trusted_source(client, article.url, article.source)
+        source_rank = source_ranks.get(normalize_match_text(article.source), len(source_ranks) + 1)
+        title_words = [
+            word
+            for word in normalize_match_text(article.title).split()
+            if word not in TRIAGE_GROUP_STOP_WORDS
+        ]
+        story_group = " ".join(title_words[:4])
+        published = article.published_at or article.created_at
+        published_timestamp = published.timestamp() if published else 0
+        return (
+            _review_score_band(score),
+            0 if trusted else 1,
+            source_rank,
+            0 if identity_visible else 1,
+            -score,
+            story_group,
+            -published_timestamp,
+            -article.pk,
+        )
+
+    return sorted(articles, key=priority_key)
 
 
 def suggested_role_variations_for_client(client):
@@ -428,10 +494,15 @@ def client_news(request, client_id):
 
     page_size = int(request.GET.get("page_size", 20))
     page_number = request.GET.get("page")
-    sort_order = request.GET.get("sort", "date-desc")
+    requested_sort = request.GET.get("sort")
     source_filter = request.GET.get("source", "")
     current_search_query = request.GET.get("q", "")
     status_filter = request.GET.get("status", "accepted")
+    allowed_sort_orders = {"date-desc", "date-asc", "source"}
+    if status_filter == "review":
+        allowed_sort_orders.add("priority")
+    default_sort_order = "priority" if status_filter == "review" else "date-desc"
+    sort_order = requested_sort if requested_sort in allowed_sort_orders else default_sort_order
 
     revalidate_accepted_articles_for_client(client, limit=150)
     base_articles_qs = Article.objects.filter(client=client, excluded=False)
@@ -486,6 +557,8 @@ def client_news(request, client_id):
         return redirect(f"{redirect_url}?{query_params}" if query_params else redirect_url)
 
     display_articles = deduplicate_articles_for_display(articles_qs)
+    if status_filter == "review" and sort_order == "priority":
+        display_articles = sort_review_articles_by_priority(display_articles, client)
     paginator = Paginator(display_articles, page_size)
     try:
         page_obj = paginator.page(page_number)

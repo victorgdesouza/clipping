@@ -330,6 +330,9 @@
   <div class="filter-group">
     <label for="sort">Ordenar por:</label>
     <select id="sort" name="sort">
+      {% if status_filter == "review" %}
+      <option value="priority" {% if sort == "priority" %}selected{% endif %}>Prioridade de revisão</option>
+      {% endif %}
       <option value="date-desc" {% if sort == "date-desc" %}selected{% endif %}>Data (mais recente)</option>
       <option value="date-asc" {% if sort == "date-asc" %}selected{% endif %}>Data (mais antiga)</option>
     </select>
