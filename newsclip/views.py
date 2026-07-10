@@ -21,6 +21,7 @@ from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 from django_q.tasks import async_task
 
 from .diagnostics import build_clipping_diagnostic
+from .learning import record_manual_feedback
 from .forms import ClientForm, ReportForm
 from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob, Source
 from .utils import (
@@ -540,14 +541,22 @@ def client_news(request, client_id):
         if not ids_selecionados:
             messages.warning(request, "Selecione pelo menos uma noticia.")
         elif acao == "excluir":
+            selected_articles = list(
+                Article.objects.filter(client=client, id__in=ids_selecionados).select_related("client")
+            )
             updated_count = Article.objects.filter(client=client, id__in=ids_selecionados).update(excluded=True)
+            record_manual_feedback(selected_articles, "REJECTED", request.user)
             messages.success(request, f"{updated_count} noticia(s) marcada(s) como excluida(s).")
         elif acao == "manter":
+            selected_articles = list(
+                Article.objects.filter(client=client, id__in=ids_selecionados).select_related("client")
+            )
             updated_count = Article.objects.filter(client=client, id__in=ids_selecionados).update(
                 excluded=False,
                 validation_status="ACCEPTED",
                 validation_reason="Aprovada manualmente pelo usuario",
             )
+            record_manual_feedback(selected_articles, "ACCEPTED", request.user)
             messages.success(request, f"{updated_count} noticia(s) marcada(s) como mantida(s).")
         else:
             messages.error(request, "Acao invalida.")
@@ -618,6 +627,7 @@ def bulk_update_news(request, client_id):
         return redirect(reverse("client_news", args=[client_id]))
 
     articles_qs = Article.objects.filter(client=client, id__in=ids)
+    feedback_articles = list(articles_qs.select_related("client"))
     updated_ids = list(articles_qs.values_list("id", flat=True))
     if action == "exclude":
         updated_count = articles_qs.update(excluded=True)
@@ -661,6 +671,14 @@ def bulk_update_news(request, client_id):
         destination = "Validadas"
         target_status = "accepted"
 
+    feedback_decision = {
+        "exclude": "REJECTED",
+        "reject": "REJECTED",
+        "review": "REVIEW",
+        "validate": "ACCEPTED",
+        "keep": "ACCEPTED",
+    }[action]
+    feedback_saved = record_manual_feedback(feedback_articles, feedback_decision, request.user)
     message = f"{updated_count} noticia(s) {verb}."
     if action in {"validate", "keep", "reject", "review"} and updated_count:
         message = f"{updated_count} noticia(s) atualizada(s) e movida(s) para a aba {destination}."
@@ -680,6 +698,7 @@ def bulk_update_news(request, client_id):
                 "excluded": action == "exclude",
                 "message": message,
                 "status_counts": status_counts,
+                "feedback_saved": feedback_saved,
             }
         )
 

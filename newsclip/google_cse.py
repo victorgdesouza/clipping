@@ -9,10 +9,66 @@ from django.conf import settings
 from django.utils import timezone
 
 from newsclip.models import DiscoveryRun
-from newsclip.utils import build_client_search_queries, sanitize_sensitive_text, save_article
+from newsclip.utils import (
+    client_context_terms,
+    client_excluded_terms,
+    client_identity_terms,
+    normalize_match_text,
+    sanitize_sensitive_text,
+    save_article,
+    strong_client_identity_terms,
+)
 
 
 GOOGLE_CSE_URL = "https://www.googleapis.com/customsearch/v1"
+
+
+def _quoted_search_term(value: str) -> str:
+    clean = " ".join((value or "").replace('"', " ").split())
+    return f'"{clean}"' if " " in clean else clean
+
+
+def build_google_cse_queries(client, max_queries: int) -> list[str]:
+    """Monta campanha curta equilibrando identidade, variação, contexto e exclusões."""
+    max_queries = max(1, int(max_queries or 1))
+    identities = strong_client_identity_terms(client) or client_identity_terms(client)
+    contexts = client_context_terms(client)
+    excluded_terms = client_excluded_terms(client)[:3]
+    queries = []
+    seen = set()
+
+    def add(*terms):
+        query_terms = [_quoted_search_term(term) for term in terms if (term or "").strip()]
+        query_terms.extend(f"-{_quoted_search_term(term)}" for term in excluded_terms)
+        query = " ".join(term for term in query_terms if term).strip()
+        normalized = normalize_match_text(query)
+        if query and normalized not in seen:
+            queries.append(query)
+            seen.add(normalized)
+
+    if not identities:
+        return []
+
+    primary_identity = identities[0]
+    add(primary_identity)
+
+    # A busca rápida precisa cobrir ao menos o nome oficial e a principal variação.
+    if len(identities) > 1:
+        add(identities[1])
+
+    # Na busca completa, a terceira consulta liga a identidade ao contexto principal.
+    if contexts:
+        add(primary_identity, contexts[0])
+
+    for identity in identities[2:]:
+        add(identity)
+    for context in contexts[1:]:
+        add(primary_identity, context)
+
+    if len(queries) < max_queries:
+        add(primary_identity, "notícias")
+
+    return queries[:max_queries]
 
 
 def _finish_run(run, *, status, queries=0, results=0, articles=0, error=""):
@@ -66,8 +122,7 @@ def fetch_google_cse(client, since_dt, log=None, *, quick=False) -> int:
     max_queries = max(1, getattr(settings, setting_name, 2 if quick else 3))
     max_results = max(1, min(10, getattr(settings, "GOOGLE_CSE_RESULTS_PER_QUERY", 10)))
     timeout = max(5, getattr(settings, "GOOGLE_CSE_REQUEST_TIMEOUT", 20))
-    terms = build_client_search_queries(client, max_queries=max_queries)
-    selected_terms = list(dict.fromkeys(term.strip() for term in terms if term.strip()))[:max_queries]
+    selected_terms = build_google_cse_queries(client, max_queries=max_queries)
     lookback_days = max(1, min(365, (timezone.now() - since_dt).days + 1))
 
     try:

@@ -18,8 +18,19 @@ from newsclip.discovery import (
     parse_sitemap,
     profile_source,
 )
-from newsclip.google_cse import fetch_google_cse
-from newsclip.models import Article, Client, DiscoveryResult, DiscoveryRun, FetchLog, GeneratedReport, Source, SourceEndpoint
+from newsclip.learning import invalidate_client_learning_profile, learned_score_adjustment
+from newsclip.google_cse import build_google_cse_queries, fetch_google_cse
+from newsclip.models import (
+    Article,
+    Client,
+    DiscoveryResult,
+    DiscoveryRun,
+    FetchLog,
+    GeneratedReport,
+    Source,
+    SourceEndpoint,
+    ValidationFeedback,
+)
 from newsclip.providers import fetch_gdelt, fetch_youtube
 from newsclip.signals import update_search_vector
 from newsclip.tasks import fetch_news_task
@@ -30,6 +41,7 @@ from newsclip.utils import (
     deduplicate_articles_for_display,
     legacy_keyword_identity_terms,
     record_endpoint_failure,
+    revalidate_article,
     sanitize_sensitive_text,
     save_article,
     validate_article_candidate,
@@ -398,6 +410,150 @@ class AdvancedValidationTests(TestCase):
         self.assertNotEqual(result["status"], "ACCEPTED")
 
 
+
+@override_settings(
+    VALIDATION_LEARNING_ENABLED=True,
+    VALIDATION_LEARNING_MIN_ACCEPTED=2,
+    VALIDATION_LEARNING_MIN_REJECTED=2,
+    VALIDATION_LEARNING_MIN_FEATURE_OCCURRENCES=2,
+    VALIDATION_LEARNING_MAX_ADJUSTMENT=12,
+    VALIDATION_LEARNING_CACHE_SECONDS=0,
+)
+class ValidationLearningTests(TestCase):
+    def setUp(self):
+        self.client_record = Client.objects.create(
+            name="Cliente Regional",
+            excluded_keywords="Cidade Homonima",
+        )
+
+    def add_feedback(self, decision, title, source):
+        return ValidationFeedback.objects.create(
+            client=self.client_record,
+            decision=decision,
+            base_status="REVIEW",
+            base_score=55,
+            base_reason="Pendente antes da decisao manual",
+            title=title,
+            content="Cobertura regional sobre mobilidade e administracao.",
+            source=source,
+            provider="GOOGLE_CSE",
+        )
+
+    def test_model_uses_clean_manual_decisions_to_adjust_score(self):
+        self.add_feedback("ACCEPTED", "Cliente Regional anuncia obra de mobilidade", "G1")
+        self.add_feedback("ACCEPTED", "Cliente Regional entrega corredor de mobilidade", "G1")
+        self.add_feedback("REJECTED", "Congresso vota regra nacional sem relacao local", "Blog Generico")
+        self.add_feedback("REJECTED", "Congresso debate pauta nacional sem relacao local", "Blog Generico")
+        invalidate_client_learning_profile(self.client_record.pk)
+
+        accepted_adjustment, accepted_reason = learned_score_adjustment(
+            self.client_record,
+            title="Cliente Regional apresenta novo projeto",
+            source="G1",
+            provider="GOOGLE_CSE",
+        )
+        rejected_adjustment, rejected_reason = learned_score_adjustment(
+            self.client_record,
+            title="Congresso analisa pauta nacional",
+            source="Blog Generico",
+            provider="GOOGLE_CSE",
+        )
+
+        self.assertGreater(accepted_adjustment, 0)
+        self.assertLess(rejected_adjustment, 0)
+        self.assertLessEqual(abs(accepted_adjustment), 12)
+        self.assertLessEqual(abs(rejected_adjustment), 12)
+        self.assertIn("aprendizado manual", accepted_reason)
+        self.assertIn("aprendizado manual", rejected_reason)
+
+    @override_settings(
+        VALIDATION_LEARNING_MIN_ACCEPTED=3,
+        VALIDATION_LEARNING_MIN_REJECTED=3,
+    )
+    def test_model_waits_for_minimum_balanced_dataset(self):
+        self.add_feedback("ACCEPTED", "Cliente Regional em pauta local", "G1")
+        self.add_feedback("REJECTED", "Noticia nacional sem relacao", "Blog Generico")
+        invalidate_client_learning_profile(self.client_record.pk)
+
+        adjustment, reason = learned_score_adjustment(
+            self.client_record,
+            title="Cliente Regional divulga agenda",
+            source="G1",
+        )
+
+        self.assertEqual(adjustment, 0)
+        self.assertEqual(reason, "")
+
+    @patch(
+        "newsclip.learning.learned_score_adjustment",
+        return_value=(12, "aprendizado manual +12 (fonte confiavel; 8 exemplos)"),
+    )
+    def test_learning_can_promote_borderline_candidate(self, learning_mock):
+        self.client_record.name = "Fabio Candido"
+        self.client_record.name_variations = "Prefeito de Rio Preto"
+        self.client_record.context_terms = "Rio Preto, prefeitura"
+        self.client_record.save()
+
+        result = validate_article_candidate(
+            self.client_record,
+            "Programa municipal recebe novos investimentos",
+            "O Prefeito de Rio Preto apresentou o projeto em Rio Preto para a prefeitura.",
+            "http://jornal.example/programa",
+            "Jornal Local",
+            provider="GOOGLE_CSE",
+        )
+
+        self.assertEqual(result["status"], "ACCEPTED")
+        self.assertGreaterEqual(result["score"], 70)
+        self.assertIn("aprendizado manual +12", result["reason"])
+        learning_mock.assert_called_once()
+
+    @patch("newsclip.learning.learned_score_adjustment")
+    def test_excluded_keyword_remains_absolute(self, learning_mock):
+        result = validate_article_candidate(
+            self.client_record,
+            "Cliente Regional visita Cidade Homonima",
+            "",
+            "https://jornal.example/cidade",
+            "Jornal Local",
+        )
+
+        self.assertEqual(result["status"], "REJECTED")
+        self.assertEqual(result["score"], 0)
+        learning_mock.assert_not_called()
+
+    def test_manual_feedback_is_not_overwritten_by_revalidation(self):
+        article = Article.objects.create(
+            client=self.client_record,
+            title="Noticia automatica sem identidade do cliente",
+            url="https://jornal.example/manual-protegida",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="ACCEPTED",
+            relevance_score=90,
+            validation_reason="Marcada como mantida pelo usuario",
+            dedup_key="manual-learning-protected",
+        )
+        ValidationFeedback.objects.create(
+            article=article,
+            client=self.client_record,
+            decision="ACCEPTED",
+            base_status="REJECTED",
+            base_score=20,
+            base_reason="Rejeitada automaticamente",
+            title=article.title,
+            source=article.source,
+        )
+
+        result = revalidate_article(article, persist=True)
+        article.refresh_from_db()
+
+        self.assertEqual(result["status"], "ACCEPTED")
+        self.assertEqual(article.validation_status, "ACCEPTED")
+        self.assertEqual(article.relevance_score, 90)
+        self.assertEqual(article.validation_reason, "Marcada como mantida pelo usuario")
+
+
 class CountryBullsRelevanceTests(TestCase):
     def setUp(self):
         self.client_record = Client.objects.create(
@@ -536,6 +692,30 @@ class AdditionalProvidersTests(TestCase):
         self.client_record = Client.objects.create(name="Cliente Regional", keywords="mobilidade")
         self.since = timezone.now() - timedelta(days=30)
 
+    def test_google_cse_queries_balance_identity_variation_context_and_exclusions(self):
+        client = Client.objects.create(
+            name="Fábio Candido",
+            name_variations="Prefeito de Rio Preto, Coronel Fábio Candido",
+            context_terms="São José do Rio Preto, prefeitura",
+            excluded_keywords="Rio Preto da Eva",
+        )
+
+        quick_queries = build_google_cse_queries(client, max_queries=2)
+        complete_queries = build_google_cse_queries(client, max_queries=3)
+
+        self.assertEqual(
+            quick_queries,
+            [
+                '"Fábio Candido" -"Rio Preto da Eva"',
+                '"Prefeito de Rio Preto" -"Rio Preto da Eva"',
+            ],
+        )
+        self.assertEqual(
+            complete_queries[2],
+            '"Fábio Candido" "São José do Rio Preto" -"Rio Preto da Eva"',
+        )
+        self.assertEqual(len(complete_queries), 3)
+
     @override_settings(
         GOOGLE_API_KEY="google-test",
         GOOGLE_CSE_ID="cse-test",
@@ -573,6 +753,7 @@ class AdditionalProvidersTests(TestCase):
         params = get_mock.call_args.kwargs["params"]
         self.assertEqual(params["key"], "google-test")
         self.assertEqual(params["cx"], "cse-test")
+        self.assertEqual(params["q"], '"Cliente Regional"')
         self.assertIn("dateRestrict", params)
 
     @override_settings(
@@ -1256,6 +1437,11 @@ class ClientAccessTests(TestCase):
         review_article.refresh_from_db()
         self.assertEqual(review_article.validation_status, "ACCEPTED")
         self.assertEqual(review_article.validation_reason, "Validada manualmente pelo usuario")
+        self.assertEqual(response.json()["feedback_saved"], 1)
+        review_feedback = ValidationFeedback.objects.get(article=review_article)
+        self.assertEqual(review_feedback.decision, "ACCEPTED")
+        self.assertEqual(review_feedback.base_status, "REVIEW")
+        self.assertEqual(review_feedback.decided_by, self.user)
 
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
         self.assertNotContains(response, "Cliente Teste em noticia para validar")
@@ -1282,6 +1468,9 @@ class ClientAccessTests(TestCase):
 
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=rejected")
         self.assertContains(response, "Cliente Teste em noticia para invalidar")
+        self.assertEqual(
+            ValidationFeedback.objects.get(article=accepted_article).decision, "REJECTED"
+        )
 
         response = self.client.post(
             reverse("bulk_update_news", args=[self.client_record.pk]),
@@ -1299,6 +1488,9 @@ class ClientAccessTests(TestCase):
 
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=rejected")
         self.assertNotContains(response, "Cliente Teste em noticia rejeitada para manter")
+        self.assertEqual(
+            ValidationFeedback.objects.get(article=rejected_article).decision, "ACCEPTED"
+        )
 
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
         self.assertContains(response, "Cliente Teste em noticia rejeitada para manter")
@@ -1316,6 +1508,9 @@ class ClientAccessTests(TestCase):
         rejected_article.refresh_from_db()
         self.assertEqual(rejected_article.validation_status, "REVIEW")
         self.assertEqual(rejected_article.validation_reason, "Movida manualmente para revisao pelo usuario")
+        self.assertEqual(
+            ValidationFeedback.objects.get(article=rejected_article).decision, "REVIEW"
+        )
 
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
         self.assertNotContains(response, "Cliente Teste em noticia rejeitada para manter")

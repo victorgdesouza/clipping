@@ -672,6 +672,19 @@ def validate_article_candidate(
     if canonicalize_article_url(url).startswith("https://") and score >= 70:
         score = min(100, score + 3)
 
+    if not official_source:
+        try:
+            from newsclip.learning import learned_score_adjustment
+
+            learned_adjustment, learned_reason = learned_score_adjustment(
+                client, title, content, source, provider
+            )
+        except Exception:
+            learned_adjustment, learned_reason = 0, ""
+        if learned_adjustment:
+            score = max(0, min(100, score + learned_adjustment))
+            reason = f"{reason}; {learned_reason}"
+
     if score >= 70:
         status = "ACCEPTED"
     elif score >= 40:
@@ -687,6 +700,13 @@ def validate_article_candidate(
 
 
 def revalidate_article(article, persist: bool = True, client=None) -> dict:
+    if persist and is_manual_validation(article):
+        return {
+            "status": article.validation_status,
+            "score": article.relevance_score,
+            "reason": article.validation_reason,
+        }
+
     article_client = client or article.client
     validation = validate_article_candidate(
         article_client,
@@ -714,7 +734,9 @@ def revalidate_article(article, persist: bool = True, client=None) -> dict:
 
 def is_manual_validation(article) -> bool:
     reason = (getattr(article, "validation_reason", "") or "").casefold()
-    return "manualmente pelo usuario" in reason or "manual pelo usuario" in reason
+    if "usuario" in reason:
+        return True
+    return getattr(article, "manual_feedback", None) is not None
 
 
 def revalidate_accepted_articles_for_client(client, limit: int = 250) -> int:
@@ -722,7 +744,10 @@ def revalidate_accepted_articles_for_client(client, limit: int = 250) -> int:
         client=client,
         excluded=False,
         validation_status="ACCEPTED",
-    ).exclude(validation_reason__icontains="manualmente pelo usuario").order_by("-published_at", "-id")[:limit]
+    ).exclude(
+        Q(validation_reason__icontains="usuario")
+        | Q(manual_feedback__isnull=False)
+    ).order_by("-published_at", "-id")[:limit]
     changed = 0
     for article in articles:
         previous = article.validation_status
@@ -746,7 +771,10 @@ def revalidate_pending_articles_for_client(
         client=client,
         excluded=False,
         validation_status__in=selected_statuses,
-    ).exclude(validation_reason__icontains="manualmente pelo usuario").order_by("-published_at", "-id")
+    ).exclude(
+        Q(validation_reason__icontains="usuario")
+        | Q(manual_feedback__isnull=False)
+    ).order_by("-published_at", "-id")
     if limit:
         articles = articles[:limit]
 

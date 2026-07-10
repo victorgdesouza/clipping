@@ -8,6 +8,7 @@ from .models import (
     NewsFetchJob,
     RelevanceAuditLog,
     Source,
+    ValidationFeedback,
     SourceEndpoint,
 )
 
@@ -66,6 +67,14 @@ class RelevanceAuditLogAdmin(admin.ModelAdmin):
     list_filter = ("decision", "provider", "created_at", "client")
     search_fields = ("title", "url", "query", "relevance_reason")
     readonly_fields = ("created_at",)
+
+
+@admin.register(ValidationFeedback)
+class ValidationFeedbackAdmin(admin.ModelAdmin):
+    list_display = ("updated_at", "client", "decision", "base_score", "source", "provider")
+    list_filter = ("decision", "provider", "updated_at", "client")
+    search_fields = ("title", "content", "source")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(NewsFetchJob)

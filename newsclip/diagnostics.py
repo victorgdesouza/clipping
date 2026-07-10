@@ -3,7 +3,16 @@ from datetime import date
 from django.conf import settings
 from django.db.models import Count, Q
 
-from newsclip.models import Article, Client, DiscoveryRun, FetchLog, RelevanceAuditLog, Source
+from newsclip.learning import get_client_learning_profile
+from newsclip.models import (
+    Article,
+    Client,
+    DiscoveryRun,
+    FetchLog,
+    RelevanceAuditLog,
+    Source,
+    ValidationFeedback,
+)
 from newsclip.utils import (
     article_dedup_key,
     canonicalize_article_url,
@@ -219,6 +228,28 @@ def build_clipping_diagnostic(
         _line(lines, f"{item['decision']}: {item['total']}")
 
     _line(lines)
+    _line(lines, "=== Aprendizado com decisoes manuais ===")
+    feedback = ValidationFeedback.objects.filter(client=client)
+    feedback_counts = feedback.values("decision").annotate(total=Count("id")).order_by("decision")
+    if not feedback_counts:
+        _line(lines, "Nenhuma decisao manual registrada como dataset.")
+    for item in feedback_counts:
+        _line(lines, f"{item['decision']}: {item['total']}")
+    learning_profile = get_client_learning_profile(client)
+    if learning_profile["active"]:
+        _line(
+            lines,
+            f"Modelo: ATIVO | exemplos:{learning_profile['accepted'] + learning_profile['rejected']} "
+            f"| sinais aprendidos:{len(learning_profile['weights'])}",
+        )
+    else:
+        _line(
+            lines,
+            f"Modelo: AGUARDANDO DADOS | validadas:{learning_profile['accepted']} "
+            f"| rejeitadas:{learning_profile['rejected']}",
+        )
+    _line(lines)
+
     _line(lines, "=== Artigos salvos por status ===")
     articles = Article.objects.filter(client=client, created_at__date__gte=start, created_at__date__lte=end)
     status_counts = articles.values("validation_status").annotate(total=Count("id")).order_by("validation_status")

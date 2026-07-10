@@ -228,6 +228,49 @@ class Article(models.Model):
         return (self.title[:47] + "...") if self.title and len(self.title) > 50 else self.title
 
 
+
+
+class ValidationFeedback(models.Model):
+    DECISION_CHOICES = [
+        ("ACCEPTED", "Validada"),
+        ("REVIEW", "Revisar"),
+        ("REJECTED", "Rejeitada"),
+    ]
+
+    article = models.OneToOneField(
+        Article,
+        on_delete=models.SET_NULL,
+        related_name="manual_feedback",
+        null=True,
+        blank=True,
+    )
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="validation_feedback")
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="validation_feedback",
+        null=True,
+        blank=True,
+    )
+    decision = models.CharField(max_length=16, choices=DECISION_CHOICES, db_index=True)
+    base_status = models.CharField(max_length=16, blank=True)
+    base_score = models.PositiveSmallIntegerField(default=0)
+    base_reason = models.CharField(max_length=255, blank=True)
+    title = models.CharField(max_length=500)
+    content = models.TextField(blank=True)
+    source = models.CharField(max_length=255, blank=True, db_index=True)
+    provider = models.CharField(max_length=32, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["client", "decision", "-updated_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.client}: {self.decision} - {self.title[:60]}"
 class RelevanceAuditLog(models.Model):
     DECISION_CHOICES = [
         ("APPROVED", "Aprovado"),
