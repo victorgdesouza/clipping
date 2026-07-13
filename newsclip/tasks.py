@@ -43,3 +43,27 @@ def fetch_news_task(client_id, job_id=None):
             job.error_message = str(e)
             job.save(update_fields=["status", "finished_at", "error_message", "updated_at"])
         raise
+
+
+def extract_youtube_transcript_task(job_id):
+    from .models import TranscriptExtraction
+    from .transcripts import TranscriptError, extract_transcript
+
+    job = TranscriptExtraction.objects.get(pk=job_id)
+    job.status = "running"
+    job.started_at = timezone.now()
+    job.save(update_fields=["status", "started_at", "updated_at"])
+    try:
+        result = extract_transcript(job.video_url)
+        for field in ("video_id", "video_url", "title", "channel", "language", "source", "segments"):
+            setattr(job, field, result[field])
+        job.status = "completed"
+        job.finished_at = timezone.now()
+        job.save()
+    except Exception:
+        logger.exception("Erro ao extrair transcrição do YouTube para job_id=%s", job_id)
+        job.status = "failed"
+        job.error_message = "Não foi possível obter a transcrição. O vídeo pode não ter legendas disponíveis ou o YouTube pode ter limitado temporariamente as requisições."
+        job.finished_at = timezone.now()
+        job.save(update_fields=["status", "error_message", "finished_at", "updated_at"])
+        raise

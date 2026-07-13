@@ -27,6 +27,8 @@ XlsxWriter==3.2.9
 reportlab==5.0.0
 
 gevent==26.4.0
+youtube-transcript-api>=1.2.0,<2
+yt-dlp>=2025.1.0
 
 newsapi-python==0.2.7
 

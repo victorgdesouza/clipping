@@ -23,7 +23,8 @@ from django_q.tasks import async_task
 from .diagnostics import build_clipping_diagnostic
 from .learning import record_manual_feedback
 from .forms import ClientForm, ReportForm
-from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob, Source
+from .models import Article, Client, DiscoveryRun, GeneratedReport, NewsFetchJob, Source, TranscriptExtraction
+from .transcripts import export_files, extract_video_id, zip_files
 from .utils import (
     append_unique_terms,
     deduplicate_articles_for_display,
@@ -40,6 +41,76 @@ SUGGESTED_PUBLIC_ROLE_VARIATIONS = (
     "Prefeito de Rio Preto, Prefeito de São José do Rio Preto, "
     "Prefeito Fábio Candido, Prefeito Coronel Fábio Candido"
 )
+
+
+def _admin_only(request):
+    return request.user.is_superuser
+
+
+@login_required
+def youtube_transcript_extractor(request):
+    if not _admin_only(request):
+        return HttpResponseForbidden("Este recurso é exclusivo do administrador.")
+    return render(request, "newsclip/youtube_transcript.html")
+
+
+@require_POST
+@login_required
+def youtube_transcript_start(request):
+    if not _admin_only(request):
+        return HttpResponseForbidden("Este recurso é exclusivo do administrador.")
+    url = request.POST.get("url", "").strip()
+    try:
+        extract_video_id(url)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    active = TranscriptExtraction.objects.filter(status__in=["queued", "running"]).order_by("-created_at").first()
+    if active:
+        return JsonResponse({"error": "Já existe uma extração em andamento."}, status=409)
+    job = TranscriptExtraction.objects.create(created_by=request.user, video_url=url)
+    try:
+        task_id = async_task("newsclip.tasks.extract_youtube_transcript_task", job.pk, task_name=f"youtube-transcript-{job.pk}")
+    except Exception:
+        job.status = "failed"
+        job.error_message = "Não foi possível iniciar a extração. Tente novamente."
+        job.finished_at = timezone.now()
+        job.save(update_fields=["status", "error_message", "finished_at", "updated_at"])
+        return JsonResponse({"error": job.error_message}, status=503)
+    job.task_id = str(task_id)
+    job.save(update_fields=["task_id", "updated_at"])
+    return JsonResponse({"status": "queued", "status_url": reverse("youtube_transcript_status", args=[job.pk])}, status=202)
+
+
+@login_required
+def youtube_transcript_status(request, job_id):
+    if not _admin_only(request):
+        return HttpResponseForbidden("Este recurso é exclusivo do administrador.")
+    job = get_object_or_404(TranscriptExtraction, pk=job_id)
+    if job.status in {"queued", "running"} and job.created_at < timezone.now() - timedelta(minutes=15):
+        job.status, job.error_message, job.finished_at = "failed", "Tempo limite excedido ao buscar a transcrição.", timezone.now()
+        job.save(update_fields=["status", "error_message", "finished_at", "updated_at"])
+    payload = {"status": job.status, "message": job.error_message or ("Transcrição concluída." if job.status == "completed" else "Processando transcrição..."), "title": job.title, "channel": job.channel, "language": job.language, "source": job.source, "segment_count": len(job.segments), "download_base": reverse("youtube_transcript_download", args=[job.pk, "txt"]).removesuffix("txt/")}
+    return JsonResponse(payload)
+
+
+@login_required
+def youtube_transcript_download(request, job_id, file_type):
+    if not _admin_only(request):
+        return HttpResponseForbidden("Este recurso é exclusivo do administrador.")
+    job = get_object_or_404(TranscriptExtraction, pk=job_id, status="completed")
+    base = f"transcricao_{job.video_id}"
+    if file_type == "zip":
+        response = HttpResponse(zip_files(job), content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="{base}.zip"'
+        return response
+    files = export_files(job)
+    expected = f"{base}.{file_type}"
+    if file_type not in {"txt", "json", "srt"} or expected not in files:
+        return HttpResponse("Arquivo indisponível.", status=404)
+    content_type = {"txt": "text/plain; charset=utf-8", "json": "application/json", "srt": "application/x-subrip; charset=utf-8"}[file_type]
+    response = HttpResponse(files[expected], content_type=content_type)
+    response["Content-Disposition"] = f'attachment; filename="{expected}"'
+    return response
 
 TRIAGE_PRIORITY_SOURCES = (
     "G1",

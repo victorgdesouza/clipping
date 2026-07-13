@@ -328,6 +328,42 @@ class NewsFetchJob(models.Model):
         return f"{self.client}: {self.status}"
 
 
+class TranscriptExtraction(models.Model):
+    STATUS_CHOICES = [
+        ("queued", "Na fila"),
+        ("running", "Em execucao"),
+        ("completed", "Concluida"),
+        ("failed", "Falhou"),
+    ]
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="transcript_extractions",
+        null=True,
+    )
+    task_id = models.CharField(max_length=64, blank=True, db_index=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued", db_index=True)
+    video_url = models.URLField(max_length=1000)
+    video_id = models.CharField(max_length=16, blank=True)
+    title = models.CharField(max_length=500, blank=True)
+    channel = models.CharField(max_length=500, blank=True)
+    language = models.CharField(max_length=80, blank=True)
+    source = models.CharField(max_length=64, blank=True)
+    segments = models.JSONField(default=list, blank=True)
+    error_message = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Transcricao {self.video_id or self.pk}: {self.status}"
+
+
 class GeneratedReport(models.Model):
     FORMAT_CHOICES = [
         ("pdf", "PDF"),

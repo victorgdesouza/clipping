@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Extrator de transcrições | Clipping App{% endblock %}
+{% block content %}
+<section class="page-header"><h1>Extrator de transcrições do YouTube</h1><p>Ferramenta administrativa para gerar TXT, JSON, SRT e ZIP de vídeos públicos.</p></section>
+<section class="card"><form id="transcript-form" method="post" action="{% url 'youtube_transcript_start' %}">{% csrf_token %}<label for="url">Link do YouTube</label><input id="url" name="url" type="url" required placeholder="https://www.youtube.com/watch?v=..."><label for="languages">Idiomas preferenciais</label><input id="languages" name="languages" value="pt-BR, pt, pt-PT, en"><button class="button" type="submit">Extrair transcrição</button></form><p id="status" class="message message-info" hidden></p></section>
+<section id="result" class="card" hidden></section>
+<script>
+const form=document.getElementById('transcript-form'), statusBox=document.getElementById('status'), result=document.getElementById('result');
+function status(message, kind='info'){statusBox.hidden=false;statusBox.className='message message-'+kind;statusBox.textContent=message}
+function appendText(parent, tag, value){const element=document.createElement(tag);element.textContent=value;parent.appendChild(element);return element}
+function showResult(payload){result.replaceChildren();appendText(result,'h2',payload.title||'Transcrição concluída');const details=appendText(result,'p',`Canal: ${payload.channel||'Não identificado'}\nIdioma: ${payload.language||'Não identificado'}\nFonte: ${payload.source||'Não identificada'}\nSegmentos: ${payload.segment_count}`);details.style.whiteSpace='pre-line';const actions=appendText(result,'p','');for(const [type,label] of [['txt','Baixar TXT'],['json','Baixar JSON'],['srt','Baixar SRT'],['zip','Baixar ZIP']]){const link=document.createElement('a');link.className='button';link.href=payload.download_base+type+'/';link.textContent=label;actions.appendChild(link);actions.appendChild(document.createTextNode(' '))}result.hidden=false}
+form.addEventListener('submit', async (event)=>{event.preventDefault();result.hidden=true;status('Iniciando extração em segundo plano...');try{const response=await fetch(form.action,{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:new FormData(form)});const payload=await response.json();if(!response.ok){status(payload.error||'Não foi possível iniciar a extração.','error');return}poll(payload.status_url)}catch(error){status('Não foi possível iniciar a extração. Tente novamente.','error')}});
+async function poll(url){try{const response=await fetch(url), payload=await response.json();status(payload.message||payload.status);if(payload.status==='completed'){showResult(payload);return}if(payload.status==='failed'){status(payload.message,'error');return}setTimeout(()=>poll(url),1500)}catch(error){status('Falha ao consultar o andamento. Tente recarregar a página.','error')}}
+</script>
+{% endblock %}

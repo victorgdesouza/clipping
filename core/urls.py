@@ -23,6 +23,10 @@ from newsclip.views import (
     download_report,
     monitored_sources,
     clipping_diagnostic,
+    youtube_transcript_extractor,
+    youtube_transcript_start,
+    youtube_transcript_status,
+    youtube_transcript_download,
 )
 
 urlpatterns = [
@@ -32,6 +36,10 @@ urlpatterns = [
     path('dashboard/', login_required(dashboard), name='dashboard'),
     path('fontes/', login_required(monitored_sources), name='monitored_sources'),
     path('diagnostico/', login_required(clipping_diagnostic), name='clipping_diagnostic'),
+    path('transcricoes-youtube/', youtube_transcript_extractor, name='youtube_transcript_extractor'),
+    path('transcricoes-youtube/iniciar/', youtube_transcript_start, name='youtube_transcript_start'),
+    path('transcricoes-youtube/<int:job_id>/status/', youtube_transcript_status, name='youtube_transcript_status'),
+    path('transcricoes-youtube/<int:job_id>/download/<str:file_type>/', youtube_transcript_download, name='youtube_transcript_download'),
 
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),

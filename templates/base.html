@@ -21,6 +21,7 @@
         {% if user.is_authenticated %}
           <a href="{% url 'dashboard' %}">Dashboard</a>
           <a href="{% url 'monitored_sources' %}">Fontes</a>
+          {% if user.is_superuser %}<a href="{% url 'youtube_transcript_extractor' %}">Transcrições</a>{% endif %}
           <span class="user-chip">{{ user.username }}</span>
           <form action="{% url 'logout' %}" method="post" class="logout-form">
             {% csrf_token %}
