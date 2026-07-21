@@ -232,7 +232,8 @@ def normalized_article_title(title: str, source: str = "") -> str:
 
 def article_dedup_key(title: str, source: str = "") -> str:
     normalized_title = normalized_article_title(title, source)
-    payload = f"story|{normalized_title}".encode("utf-8")
+    normalized_source = normalize_match_text(canonicalize_source_name(source, "") or source)
+    payload = f"publication|{normalized_source}|{normalized_title}".encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -248,7 +249,12 @@ def is_duplicate_article(client, title: str, source: str = "", url: str = "") ->
     for article in candidates.only("title", "source", "url"):
         if canonical_url and canonicalize_article_url(article.url) == canonical_url:
             return True
-        if normalized_title and normalized_article_title(article.title, article.source) == normalized_title:
+        if (
+            normalized_title
+            and normalize_match_text(canonicalize_source_name(article.source, article.url) or article.source)
+            == normalize_match_text(canonicalize_source_name(source, url) or source)
+            and normalized_article_title(article.title, article.source) == normalized_title
+        ):
             return True
     return False
 

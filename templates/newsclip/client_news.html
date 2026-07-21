@@ -12,7 +12,8 @@
   <div class="action-bar">
     <a class="button button-ghost" href="{% url 'dashboard' %}">Dashboard</a>
     <a class="button button-ghost" href="{% url 'client_reports' client.id %}">Relatorios</a>
-    <button id="btn-fetch-news" class="button">Buscar noticias</button>
+    <button class="button fetch-news-action" data-mode="quick">Buscar noticias</button>
+    <button class="button button-ghost fetch-news-action" data-mode="full">Busca completa</button>
   </div>
 </section>
 
@@ -34,7 +35,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
-    const btnFetch = document.getElementById('btn-fetch-news');
+    const fetchButtons = Array.from(document.querySelectorAll('.fetch-news-action'));
     const overlay = document.getElementById('loading-overlay');
     let pollTimer = null;
     let pollAttempts = 0;
@@ -43,7 +44,7 @@
     function finishFetch(message, isError = false) {
       if (pollTimer) clearTimeout(pollTimer);
       overlay.style.display = 'none';
-      btnFetch.disabled = false;
+      fetchButtons.forEach(button => button.disabled = false);
       alert((isError ? 'Erro: ' : '') + message);
       if (!isError) window.location.reload();
     }
@@ -76,26 +77,30 @@
         });
     }
 
-    if (btnFetch) {
+    fetchButtons.forEach(btnFetch => {
       btnFetch.addEventListener('click', e => {
         e.preventDefault();
+        const searchMode = btnFetch.dataset.mode || 'quick';
         pollAttempts = 0;
-        btnFetch.disabled = true;
+        fetchButtons.forEach(button => button.disabled = true);
         overlay.style.display = 'flex';
+        const formData = new FormData();
+        formData.append('mode', searchMode);
         fetch("{% url 'fetch_news' client.id %}", {
           method: 'POST',
           headers: {
             'X-CSRFToken': getCookie('csrftoken'),
             'X-Requested-With': 'XMLHttpRequest'
-          }
+          },
+          body: formData
         })
           .then(response => response.json())
           .then(data => {
             overlay.style.display = 'none';
-            btnFetch.disabled = false;
+            fetchButtons.forEach(button => button.disabled = false);
             if (data.status === 'queued' || data.status === 'running') {
               overlay.style.display = 'flex';
-              btnFetch.disabled = true;
+              fetchButtons.forEach(button => button.disabled = true);
               pollFetch(data.status_url);
             } else {
               finishFetch(data.message || 'Nao foi possivel iniciar a busca.', true);
@@ -104,11 +109,11 @@
           .catch(err => {
             console.error('Fetch error:', err);
             overlay.style.display = 'none';
-            btnFetch.disabled = false;
+            fetchButtons.forEach(button => button.disabled = false);
             alert('Falha ao buscar noticias. Verifique o console.');
           });
       });
-    }
+    });
 
     const bulkActions = document.getElementById('bulk-actions');
     const selectAll = document.getElementById('select-all');

@@ -6,7 +6,7 @@ from newsclip.models import NewsFetchJob
 
 logger = logging.getLogger('newsclip')
 
-def fetch_news_task(client_id, job_id=None):
+def fetch_news_task(client_id, job_id=None, quick=True):
     """
     Task to be executed by Django Q to fetch news for a client.
     """
@@ -25,13 +25,17 @@ def fetch_news_task(client_id, job_id=None):
     try:
         # Call the existing management command
         # This reuses the logic already implemented in the command
-        call_command("fetch_news", "--client-id", str(client_id), "--quick")
+        command_args = ["fetch_news", "--client-id", str(client_id)]
+        if quick:
+            command_args.append("--quick")
+        call_command(*command_args)
         
         logger.info(f"Successfully completed fetch_news_task for client_id={client_id}")
         if job:
             job.status = "completed"
             job.finished_at = timezone.now()
-            job.result_message = f"Busca concluida para o cliente {client_id}."
+            mode_label = "rapida" if quick else "completa"
+            job.result_message = f"Busca {mode_label} concluida para o cliente {client_id}."
             job.save(update_fields=["status", "finished_at", "result_message", "updated_at"])
         return f"Busca concluida para o cliente {client_id}."
         

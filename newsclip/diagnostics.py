@@ -228,6 +228,52 @@ def build_clipping_diagnostic(
         _line(lines, f"{item['decision']}: {item['total']}")
 
     _line(lines)
+    _line(lines, "=== Funil de cobertura ===")
+    run_totals = runs.aggregate(
+        queries=Count("id"),
+        raw_results=Count("id", filter=Q(results_count__gt=0)),
+    )
+    total_queries = sum(run.queries_count for run in runs)
+    total_results = sum(run.results_count for run in runs)
+    total_relevant = sum(run.relevant_count for run in runs)
+    total_saved_by_runs = sum(run.articles_count for run in runs)
+    approved_audits = audits.filter(decision="APPROVED").count()
+    review_audits = audits.filter(decision="REVIEW").count()
+    rejected_audits = audits.filter(decision="REJECTED").count()
+    automatic_discarded_saved = Article.objects.filter(
+        client=client,
+        excluded=False,
+        validation_status="REJECTED",
+        created_at__date__gte=start,
+        created_at__date__lte=end,
+    ).exclude(
+        Q(validation_reason__icontains="usuario")
+        | Q(manual_feedback__isnull=False)
+    ).count()
+    _line(lines, f"Rodadas registradas: {runs.count()} | rodadas com resultados: {run_totals['raw_results']}")
+    _line(lines, f"Consultas enviadas: {total_queries}")
+    _line(lines, f"Resultados brutos retornados por provedores: {total_results}")
+    _line(lines, f"Resultados considerados relevantes pelos provedores: {total_relevant}")
+    _line(lines, f"Artigos salvos nas rodadas: {total_saved_by_runs}")
+    _line(lines, f"Auditoria: aprovadas:{approved_audits} revisao:{review_audits} rejeitadas:{rejected_audits}")
+    _line(lines, f"Descartadas automaticamente salvas para auditoria: {automatic_discarded_saved}")
+
+    provider_rows = runs.values("provider").annotate(
+        runs_total=Count("id"),
+    ).order_by("provider")
+    if provider_rows:
+        _line(lines, "Funil por provedor:")
+        for row in provider_rows:
+            provider_runs = runs.filter(provider=row["provider"])
+            _line(
+                lines,
+                f"  {row['provider']}: rodadas:{row['runs_total']} "
+                f"queries:{sum(item.queries_count for item in provider_runs)} "
+                f"resultados:{sum(item.results_count for item in provider_runs)} "
+                f"salvos:{sum(item.articles_count for item in provider_runs)}",
+            )
+
+    _line(lines)
     _line(lines, "=== Aprendizado com decisoes manuais ===")
     feedback = ValidationFeedback.objects.filter(client=client)
     feedback_counts = feedback.values("decision").annotate(total=Count("id")).order_by("decision")

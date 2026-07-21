@@ -146,11 +146,11 @@ class NewsCollectionRecallTests(TestCase):
         self.assertEqual(Article.objects.filter(client=self.client_a).count(), 1)
         self.assertEqual(Article.objects.get(client=self.client_a).url, "https://jornal.example/materia")
 
-    def test_same_title_from_different_sources_is_saved_only_once(self):
+    def test_same_title_from_different_sources_preserves_each_publication(self):
         save_article(self.client_a, "Noticia importante de São Paulo", "https://a.example/1", None, "Fonte A")
         save_article(self.client_a, "Noticia importante de São Paulo", "https://b.example/2", None, "Fonte B")
 
-        self.assertEqual(Article.objects.filter(client=self.client_a).count(), 1)
+        self.assertEqual(Article.objects.filter(client=self.client_a).count(), 2)
 
     def test_existing_duplicate_titles_are_hidden_from_display(self):
         Article.objects.create(
@@ -1659,6 +1659,8 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, "Diagnostico: Cliente Teste")
         self.assertContains(response, "BRAVE_SEARCH_API_KEY: OK")
         self.assertContains(response, "GOOGLE_CSE_ID: OK")
+        self.assertContains(response, "Funil de cobertura")
+        self.assertContains(response, "Descartadas automaticamente salvas para auditoria")
         self.assertNotContains(response, "brave-secret")
         self.assertNotContains(response, "google-secret")
         self.assertNotContains(response, "newsdata-secret")
@@ -1707,9 +1709,9 @@ class ClientAccessTests(TestCase):
         )
         Article.objects.create(
             client=self.client_record,
-            title="Cliente Teste inaugura obra - Jornal Local",
-            url="https://jornal.example/obra?utm_source=google",
-            source="Jornal Local",
+            title="Cliente Teste inaugura obra - Portal Regional",
+            url="https://portalregional.example/obra?utm_source=google",
+            source="Portal Regional",
             published_at=timezone.now(),
             validation_status="ACCEPTED",
             relevance_score=100,
@@ -1722,8 +1724,8 @@ class ClientAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Diagnostico do relatorio completo")
         self.assertContains(response, "ACCEPTED nao excluidos candidatos ao relatorio completo: 2")
-        self.assertContains(response, "Visiveis apos deduplicacao do relatorio completo: 1")
-        self.assertContains(response, "Possiveis itens ocultos pela deduplicacao")
+        self.assertContains(response, "Visiveis apos deduplicacao do relatorio completo: 2")
+        self.assertNotContains(response, "Possiveis itens ocultos pela deduplicacao")
 
     def test_diagnostic_can_target_exact_client_id_when_names_overlap(self):
         other_client = Client.objects.create(name="Coronel Cliente Teste")
@@ -1928,6 +1930,27 @@ class ClientAccessTests(TestCase):
             "newsclip.tasks.fetch_news_task",
             self.client_record.pk,
             response.json()["task_id"] if response.json()["task_id"].isdigit() else 1,
+            True,
+            task_name=f"fetch-news-client-{self.client_record.pk}",
+        )
+
+    @patch("newsclip.views.async_task", return_value="task-123")
+    def test_owner_starts_full_fetch_in_background(self, async_task_mock):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("fetch_news", args=[self.client_record.pk]),
+            {"mode": "full"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertIn("completa", response.json()["message"])
+        async_task_mock.assert_called_once_with(
+            "newsclip.tasks.fetch_news_task",
+            self.client_record.pk,
+            response.json()["task_id"] if response.json()["task_id"].isdigit() else 1,
+            False,
             task_name=f"fetch-news-client-{self.client_record.pk}",
         )
 
@@ -1940,6 +1963,16 @@ class ClientAccessTests(TestCase):
             "--client-id",
             str(self.client_record.pk),
             "--quick",
+        )
+
+    @patch("newsclip.tasks.call_command")
+    def test_fetch_news_task_can_run_complete_mode(self, call_command_mock):
+        fetch_news_task(self.client_record.pk, quick=False)
+
+        call_command_mock.assert_called_once_with(
+            "fetch_news",
+            "--client-id",
+            str(self.client_record.pk),
         )
 
 

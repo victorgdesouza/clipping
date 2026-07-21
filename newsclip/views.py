@@ -822,11 +822,14 @@ def fetch_news_view(request, client_id):
         messages.warning(request, payload["message"])
         return redirect("client_news", client_id=client_id)
 
+    full_search = (request.POST.get("mode") or request.POST.get("search_mode") or "").lower() == "full"
+    quick_mode = not full_search
     job = NewsFetchJob.objects.create(client=client, status="queued")
     task_id = async_task(
         "newsclip.tasks.fetch_news_task",
         client_id,
         job.pk,
+        quick_mode,
         task_name=f"fetch-news-client-{client_id}",
     )
     job.task_id = str(task_id)
@@ -836,7 +839,7 @@ def fetch_news_view(request, client_id):
     allowed_tasks[str(job.pk)] = client_id
     request.session["news_fetch_tasks"] = allowed_tasks
 
-    message_text = "Busca iniciada em segundo plano."
+    message_text = "Busca completa iniciada em segundo plano." if full_search else "Busca rapida iniciada em segundo plano."
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse(

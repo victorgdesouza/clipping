@@ -49,9 +49,13 @@ services:
       - key: YOUTUBE_API_KEY
         sync: false
       - key: YOUTUBE_MAX_QUERIES
-        value: "2"
+        value: "4"
+      - key: GOOGLE_CSE_MAX_QUERIES
+        value: "6"
+      - key: GOOGLE_RSS_MAX_QUERIES
+        value: "30"
       - key: GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES
-        value: "24"
+        value: "32"
       - key: GOOGLE_RSS_REQUEST_TIMEOUT
         value: "12"
       - key: GOOGLE_RSS_WORKERS
@@ -67,7 +71,7 @@ services:
       - key: GDELT_ENABLED
         value: "true"
       - key: GDELT_MAX_QUERIES
-        value: "1"
+        value: "2"
       - key: GDELT_MAX_RECORDS
         value: "50"
       - key: GDELT_MIN_INTERVAL_SECONDS
@@ -77,7 +81,7 @@ services:
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: BRAVE_SEARCH_MAX_QUERIES
-        value: "12"
+        value: "16"
       - key: BRAVE_SEARCH_RESULTS_PER_QUERY
         value: "20"
       - key: DISCOVERY_PROFILE_NEW_SOURCES

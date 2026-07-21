@@ -46,8 +46,8 @@ LOOKBACK_DAYS = 90
 MAX_API_PAGES = config("NEWS_FETCH_MAX_PAGES", default=5, cast=int)
 MAX_NEWSDATA_DAYS = config("NEWSDATA_MAX_DAYS", default=30, cast=int)
 MAX_NEWSDATA_QUERY_TERMS = config("NEWSDATA_MAX_QUERY_TERMS", default=12, cast=int)
-MAX_GOOGLE_RSS_QUERIES = config("GOOGLE_RSS_MAX_QUERIES", default=20, cast=int)
-MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES", default=24, cast=int)
+MAX_GOOGLE_RSS_QUERIES = config("GOOGLE_RSS_MAX_QUERIES", default=30, cast=int)
+MAX_GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES = config("GOOGLE_RSS_ESSENTIAL_SOURCE_QUERIES", default=32, cast=int)
 GOOGLE_RSS_REQUEST_TIMEOUT = config("GOOGLE_RSS_REQUEST_TIMEOUT", default=12, cast=int)
 GOOGLE_RSS_WORKERS = config("GOOGLE_RSS_WORKERS", default=4, cast=int)
 GOOGLE_RSS_QUICK_MAX_QUERIES = config("GOOGLE_RSS_QUICK_MAX_QUERIES", default=8, cast=int)
@@ -605,4 +605,3 @@ class Command(BaseCommand):
             self.log(f"Erro NewsAPI: {e}", level='ERROR', client=client)
         return count_saved
           
-
