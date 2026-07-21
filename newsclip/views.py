@@ -220,6 +220,30 @@ def apply_article_search(queryset, search_text):
     )
 
 
+def automatic_rejection_filter():
+    return Q(validation_status="REJECTED") & ~(
+        Q(validation_reason__icontains="usuario")
+        | Q(manual_feedback__isnull=False)
+    )
+
+
+def manual_rejection_filter():
+    return Q(validation_status="REJECTED") & (
+        Q(validation_reason__icontains="usuario")
+        | Q(manual_feedback__isnull=False)
+    )
+
+
+def article_status_counts(client):
+    base = Article.objects.filter(client=client, excluded=False)
+    return {
+        "accepted": base.filter(validation_status="ACCEPTED").count(),
+        "review": base.filter(validation_status="REVIEW").count(),
+        "rejected": base.filter(manual_rejection_filter()).count(),
+        "discarded": base.filter(automatic_rejection_filter()).count(),
+    }
+
+
 class SignUpView(CreateView):
     template_name = "registration/signup.html"
     form_class = UserCreationForm
@@ -578,15 +602,13 @@ def client_news(request, client_id):
 
     revalidate_accepted_articles_for_client(client, limit=150)
     base_articles_qs = Article.objects.filter(client=client, excluded=False)
-    status_counts = base_articles_qs.aggregate(
-        accepted=Count("id", filter=Q(validation_status="ACCEPTED")),
-        review=Count("id", filter=Q(validation_status="REVIEW")),
-        rejected=Count("id", filter=Q(validation_status="REJECTED")),
-    )
+    status_counts = article_status_counts(client)
     if status_filter == "review":
         articles_qs = base_articles_qs.filter(validation_status="REVIEW")
     elif status_filter == "rejected":
-        articles_qs = base_articles_qs.filter(validation_status="REJECTED")
+        articles_qs = base_articles_qs.filter(manual_rejection_filter())
+    elif status_filter == "discarded":
+        articles_qs = base_articles_qs.filter(automatic_rejection_filter())
     else:
         status_filter = "accepted"
         articles_qs = base_articles_qs.filter(validation_status="ACCEPTED")
@@ -755,11 +777,7 @@ def bulk_update_news(request, client_id):
         message = f"{updated_count} noticia(s) atualizada(s) e movida(s) para a aba {destination}."
 
     if request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest":
-        status_counts = Article.objects.filter(client=client, excluded=False).aggregate(
-            accepted=Count("id", filter=Q(validation_status="ACCEPTED")),
-            review=Count("id", filter=Q(validation_status="REVIEW")),
-            rejected=Count("id", filter=Q(validation_status="REJECTED")),
-        )
+        status_counts = article_status_counts(client)
         return JsonResponse(
             {
                 "updated": updated_count,

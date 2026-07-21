@@ -645,7 +645,7 @@ class CountryBullsRelevanceTests(TestCase):
             source="YouTube - TH+ SBT Interior",
         )
 
-    def test_context_only_is_not_saved_as_final_article(self):
+    def test_context_only_is_saved_as_automatic_discard_candidate(self):
         saved = save_article(
             self.client_record,
             "Prefeitura anuncia nova obra em São José do Rio Preto",
@@ -657,8 +657,10 @@ class CountryBullsRelevanceTests(TestCase):
             query='"São José do Rio Preto"',
         )
 
-        self.assertIsNone(saved)
-        self.assertFalse(Article.objects.filter(client=self.client_record).exists())
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved.validation_status, "REJECTED")
+        self.assertLess(saved.relevance_score, 40)
+        self.assertFalse(ValidationFeedback.objects.filter(article=saved).exists())
 
     def test_identity_only_in_snippet_does_not_become_accepted_article(self):
         result = validate_article_candidate(
@@ -685,6 +687,19 @@ class CountryBullsRelevanceTests(TestCase):
 
         self.assertEqual(result["status"], "REVIEW")
         self.assertGreaterEqual(result["score"], 60)
+
+    def test_known_news_source_with_identity_in_snippet_and_context_is_accepted(self):
+        result = validate_article_candidate(
+            self.client_record,
+            "Evento regional confirma atrações para o fim de semana",
+            "A programação cita Rio Preto Country Bulls, rodeio e evento.",
+            "https://g1.globo.com/sp/rio-preto/noticia/evento-regional.ghtml",
+            "G1",
+            provider="GOOGLE_RSS",
+        )
+
+        self.assertEqual(result["status"], "ACCEPTED")
+        self.assertGreaterEqual(result["score"], 70)
 
 
 class AdditionalProvidersTests(TestCase):
@@ -1314,6 +1329,51 @@ class ClientAccessTests(TestCase):
         self.assertContains(response, 'data-count="1"')
         self.assertContains(response, "Cliente Teste em noticia ambigua")
         self.assertContains(response, "Identidade fraca + contexto")
+
+    def test_client_news_separates_manual_rejected_from_automatic_discarded(self):
+        manual_rejected = Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste rejeitada manualmente",
+            url="https://jornal.example/rejeitada-manual",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="REJECTED",
+            relevance_score=20,
+            validation_reason="Invalidada manualmente pelo usuario",
+            dedup_key="manual-rejected-visible",
+        )
+        ValidationFeedback.objects.create(
+            article=manual_rejected,
+            client=self.client_record,
+            decision="REJECTED",
+            base_status="REVIEW",
+            base_score=45,
+            base_reason="Antes da decisao",
+            title=manual_rejected.title,
+            source=manual_rejected.source,
+        )
+        Article.objects.create(
+            client=self.client_record,
+            title="Cliente Teste descartada pelo robo",
+            url="https://jornal.example/descartada-automatica",
+            source="Jornal Local",
+            published_at=timezone.now(),
+            validation_status="REJECTED",
+            relevance_score=35,
+            validation_reason="Contexto isolado insuficiente",
+            dedup_key="auto-discard-visible",
+        )
+        self.client.force_login(self.user)
+
+        rejected_response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=rejected")
+        discarded_response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=discarded")
+
+        self.assertContains(rejected_response, 'data-status-count="discarded"')
+        self.assertContains(rejected_response, 'data-count="1"')
+        self.assertContains(rejected_response, "Cliente Teste rejeitada manualmente")
+        self.assertNotContains(rejected_response, "Cliente Teste descartada pelo robo")
+        self.assertContains(discarded_response, "Cliente Teste descartada pelo robo")
+        self.assertNotContains(discarded_response, "Cliente Teste rejeitada manualmente")
 
     def test_review_queue_defaults_to_triage_priority_and_allows_date_sort(self):
         now = timezone.now()

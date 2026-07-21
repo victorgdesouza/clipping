@@ -206,6 +206,7 @@
         setTabCount('accepted', data.status_counts.accepted);
         setTabCount('review', data.status_counts.review);
         setTabCount('rejected', data.status_counts.rejected);
+        setTabCount('discarded', data.status_counts.discarded);
       }
       if (selectAll) selectAll.checked = false;
       updateBulkActions();
@@ -352,6 +353,10 @@
   <a class="button {% if status_filter == 'rejected' %}{% else %}button-ghost{% endif %}"
      href="?status=rejected&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
     Rejeitadas (<span data-status-count="rejected" data-count="{{ status_counts.rejected|default:0 }}">{{ status_counts.rejected|default:0 }}</span>)
+  </a>
+  <a class="button {% if status_filter == 'discarded' %}{% else %}button-ghost{% endif %}"
+     href="?status=discarded&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
+    Descartadas (<span data-status-count="discarded" data-count="{{ status_counts.discarded|default:0 }}">{{ status_counts.discarded|default:0 }}</span>)
   </a>
 </div>
 

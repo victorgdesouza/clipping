@@ -122,6 +122,12 @@ SOURCE_NAME_CANONICAL_NAMES = {
     "record rio preto": "Record Rio Preto",
 }
 
+ESSENTIAL_SOURCE_HOSTS = {
+    source.get("site", "").split("/", 1)[0].casefold()
+    for source in ESSENTIAL_NEWS_SOURCES
+    if source.get("site")
+}
+
 
 def source_hostname(value: str) -> str:
     """Extrai o host de uma URL ou domínio informado por um provedor."""
@@ -155,6 +161,23 @@ def normalize_match_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value or "")
     without_accents = "".join(char for char in normalized if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", without_accents.casefold()).strip()
+
+
+ESSENTIAL_SOURCE_NAMES = {
+    normalize_match_text(source.get("name", ""))
+    for source in ESSENTIAL_NEWS_SOURCES
+    if source.get("name")
+}
+PRIORITY_NEWS_SOURCE_HOSTS = set(SOURCE_DOMAIN_CANONICAL_NAMES) | {
+    host for host, _path in SOURCE_URL_PATH_CANONICAL_NAMES
+}
+PRIORITY_NEWS_SOURCE_NAMES = {
+    normalize_match_text(name)
+    for name in [
+        *SOURCE_DOMAIN_CANONICAL_NAMES.values(),
+        *SOURCE_URL_PATH_CANONICAL_NAMES.values(),
+    ]
+}
 
 
 def canonicalize_article_url(value: str) -> str:
@@ -502,6 +525,18 @@ def is_trusted_source(client, url: str, source: str = "") -> bool:
     return False
 
 
+def is_essential_news_source(url: str, source: str = "") -> bool:
+    host = source_hostname(url)
+    source_norm = normalize_match_text(canonicalize_source_name(source, url) or source)
+    return any(host == known or host.endswith(f".{known}") for known in ESSENTIAL_SOURCE_HOSTS) or source_norm in ESSENTIAL_SOURCE_NAMES
+
+
+def is_priority_news_source(url: str, source: str = "") -> bool:
+    host = source_hostname(url)
+    source_norm = normalize_match_text(canonicalize_source_name(source, url) or source)
+    return any(host == known or host.endswith(f".{known}") for known in PRIORITY_NEWS_SOURCE_HOSTS) or source_norm in PRIORITY_NEWS_SOURCE_NAMES
+
+
 def is_official_social_source(client, url: str, source: str = "") -> bool:
     searchable = normalize_match_text(f"{url} {source}")
     return any(normalize_match_text(handle) in searchable for handle in social_handle_terms(client))
@@ -588,7 +623,7 @@ def validate_article_candidate(
     visible_strong_identity_matches = matched_terms(visible_searchable, strong_identity_terms)
     context_matches = matched_terms(searchable, context_terms)
     official_source = is_official_social_source(client, url, source)
-    trusted_source = is_trusted_source(client, url, source)
+    trusted_source = is_trusted_source(client, url, source) or is_priority_news_source(url, source)
     social_or_video_source = is_social_or_video_source(url, source, provider)
 
     full_name_norm = normalize_match_text(getattr(client, "name", ""))
@@ -664,6 +699,14 @@ def validate_article_candidate(
         else:
             score = 55
             reason = f"{reason}; identidade apenas no conteudo/snippet"
+
+    if trusted_source and not has_visible_identity:
+        if (full_name_match or strong_identity_matches) and context_matches:
+            score = max(score, 72)
+            reason = f"{reason}; fonte confiavel com identidade no conteudo e contexto"
+        elif identity_matches and len(context_matches) >= 2:
+            score = max(score, 60)
+            reason = f"{reason}; fonte confiavel com sinais contextuais"
 
     if trusted_source and score >= 60:
         score = min(100, score + 10)
@@ -896,7 +939,8 @@ def save_article(client, title, url, raw_date, source, content_text=None, provid
         reason=validation["reason"],
         decision=decision,
     )
-    if validation["status"] == "REJECTED":
+    should_persist_rejected_candidate = validation["status"] == "REJECTED" and validation["score"] > 0
+    if validation["status"] == "REJECTED" and not should_persist_rejected_candidate:
         return None
 
     dedup_key = article_dedup_key(processed_title, processed_source)
@@ -906,7 +950,23 @@ def save_article(client, title, url, raw_date, source, content_text=None, provid
 
     article_instance = None
     try:
-        if Article.objects.filter(client=client).filter(Q(url=processed_url) | Q(dedup_key=dedup_key)).exists():
+        existing_article = Article.objects.filter(client=client).filter(Q(url=processed_url) | Q(dedup_key=dedup_key)).first()
+        if existing_article:
+            if (
+                not is_manual_validation(existing_article)
+                and validation["status"] != existing_article.validation_status
+                and validation["score"] > int(existing_article.relevance_score or 0)
+            ):
+                Article.objects.filter(pk=existing_article.pk).update(
+                    validation_status=validation["status"],
+                    relevance_score=validation["score"],
+                    validation_reason=validation["reason"][:255],
+                    excluded=False,
+                    provider=(provider or "OTHER")[:32].upper(),
+                    content=content_text if content_text else existing_article.content,
+                )
+                existing_article.refresh_from_db()
+                return existing_article
             return None
 
         if is_duplicate_article(client, processed_title, processed_source, processed_url):
