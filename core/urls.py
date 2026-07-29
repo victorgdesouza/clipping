@@ -32,6 +32,7 @@ from newsclip.views import (
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('reports/', include('reports_app.urls', namespace='reports_app')),
+    path('indicadores/', include('municipal_dashboard.urls', namespace='municipal_dashboard')),
     path('', TemplateView.as_view(template_name='landing.html'), name='landing'),
     path('dashboard/', login_required(dashboard), name='dashboard'),
     path('fontes/', login_required(monitored_sources), name='monitored_sources'),

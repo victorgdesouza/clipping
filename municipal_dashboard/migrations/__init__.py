@@ -1,0 +1,1 @@
+"""Migrações do painel municipal."""

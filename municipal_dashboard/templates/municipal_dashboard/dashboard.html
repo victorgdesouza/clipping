@@ -1,0 +1,670 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c3855">
+  <meta name="description" content="Painel público dos indicadores estratégicos de São José do Rio Preto.">
+  <title>Indicadores da Cidade | Rio Preto</title>
+  <link rel="icon" href="{% static 'municipal_dashboard/favicon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'municipal_dashboard/css/dashboard.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Ir para o conteúdo principal</a>
+
+  <div
+    id="municipal-dashboard-root"
+    class="municipal-dashboard"
+    data-overview-url="{{ api_overview_url }}"
+    data-freshness-url="{{ api_freshness_url }}"
+    data-measurements-url="{{ api_measurements_url }}"
+    data-detail-url-template="{% url 'municipal_dashboard:api_indicator_detail' slug='__slug__' %}"
+    data-can-manage="{% if request.user.is_staff %}true{% else %}false{% endif %}"
+  >
+    <header class="site-header">
+      <div class="site-header__accent" aria-hidden="true"></div>
+      <div class="site-header__inner">
+        <a class="civic-brand" href="{% url 'municipal_dashboard:dashboard' %}" aria-label="Indicadores da Cidade — início">
+          <span class="civic-brand__mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" focusable="false">
+              <path d="M8 38V20l16-10 16 10v18"></path>
+              <path d="M14 38V24h20v14M20 38V28h8v10"></path>
+              <path d="M5 38h38"></path>
+            </svg>
+          </span>
+          <span class="civic-brand__copy">
+            <strong>Rio Preto</strong>
+            <span>Indicadores da Cidade</span>
+          </span>
+        </a>
+
+        <nav class="site-nav" aria-label="Navegação principal">
+          <a href="#visao-geral">Visão geral</a>
+          <a href="#dimensoes">Dimensões</a>
+          <a href="#indicadores">Indicadores</a>
+        </nav>
+
+        <div class="header-actions">
+          <div id="connectionStatus" class="freshness-chip freshness-chip--loading" role="status">
+            <span class="freshness-chip__dot" aria-hidden="true"></span>
+            <span id="connectionStatusText">Verificando dados</span>
+          </div>
+          <button id="copyLinkButton" class="icon-button" type="button" aria-label="Copiar link desta visão" title="Copiar link">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7-7.1l-1.1 1"></path>
+              <path d="M14 11a5 5 0 0 0-7.1-.1l-2 2a5 5 0 0 0 7 7.1l1.1-1"></path>
+            </svg>
+          </button>
+          <button id="refreshButton" class="button button--light button--compact" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M20 6v5h-5"></path>
+              <path d="M4 18v-5h5"></path>
+              <path d="M18.5 9A7 7 0 0 0 6.7 6.7L4 11M20 13l-2.7 4.3A7 7 0 0 1 5.5 15"></path>
+            </svg>
+            <span>Atualizar</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <section class="filter-bar" aria-labelledby="filters-title">
+      <div class="filter-bar__inner">
+        <div class="filter-bar__heading">
+          <div>
+            <span class="eyebrow">Consulta pública</span>
+            <h2 id="filters-title">Filtre a cidade</h2>
+          </div>
+          <button
+            id="toggleFiltersButton"
+            class="button button--secondary button--compact filter-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="dashboardFilters"
+          >
+            Filtros
+            <span id="mobileFilterCount" class="filter-count" hidden>0</span>
+          </button>
+        </div>
+
+        <form id="dashboardFilters" class="filters" role="search" autocomplete="off">
+          <div class="field field--year">
+            <label for="yearFilter">Ano</label>
+            <select id="yearFilter" name="year">
+              <option value="">Todos os anos</option>
+            </select>
+          </div>
+
+          <div class="field field--dimension">
+            <label for="dimensionFilter">Dimensão</label>
+            <select id="dimensionFilter" name="dimension">
+              <option value="">Todas as dimensões</option>
+            </select>
+          </div>
+
+          <div class="field field--axis">
+            <label for="axisFilter">Eixo</label>
+            <select id="axisFilter" name="axis">
+              <option value="">Todos os eixos</option>
+            </select>
+          </div>
+
+          <div class="field field--search">
+            <label for="searchFilter">Buscar indicador</label>
+            <div class="search-control">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-4-4"></path>
+              </svg>
+              <input
+                id="searchFilter"
+                name="q"
+                type="search"
+                maxlength="200"
+                inputmode="search"
+                placeholder="Ex.: cobertura, educação, receita"
+              >
+            </div>
+          </div>
+
+          <div class="field field--status">
+            <label for="statusFilter">Situação</label>
+            <select id="statusFilter" name="status">
+              <option value="">Todas as situações</option>
+              <option value="target_met">Meta atingida</option>
+              <option value="improving">Em melhora</option>
+              <option value="stable">Estável</option>
+              <option value="attention">Em atenção</option>
+              <option value="no_data">Sem dados</option>
+            </select>
+          </div>
+
+          <button id="clearFiltersButton" class="button button--ghost filters__clear" type="button" disabled>
+            Limpar filtros
+          </button>
+        </form>
+
+        <p id="appliedFiltersText" class="filter-summary" aria-live="polite">Nenhum filtro aplicado.</p>
+      </div>
+    </section>
+
+    <main id="main-content" tabindex="-1">
+      <section id="visao-geral" class="hero section-shell" aria-labelledby="page-title">
+        <div class="hero__copy">
+          <span class="eyebrow eyebrow--gold">Dados para decidir melhor</span>
+          <h1 id="page-title">A cidade em uma visão clara, comparável e atualizada.</h1>
+          <p>
+            Acompanhe resultados públicos por período, dimensão e eixo. Cada indicador mostra
+            sua evolução, fonte e metodologia de cálculo.
+          </p>
+          <div class="hero__meta">
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 7v5l3 2"></path>
+              </svg>
+              <span id="lastFreshnessText">Carregando data de atualização…</span>
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M4 19V8l8-4 8 4v11"></path>
+                <path d="M8 19v-6h8v6M2 19h20"></path>
+              </svg>
+              6 dimensões estratégicas
+            </span>
+          </div>
+        </div>
+
+        <aside class="coverage-card" aria-labelledby="coverage-title">
+          <div class="coverage-card__head">
+            <div>
+              <span class="eyebrow">Cobertura dos dados</span>
+              <h2 id="coverage-title"><span id="coveragePercentage">—</span><small>%</small></h2>
+            </div>
+            <svg class="coverage-ring" viewBox="0 0 120 120" role="img" aria-labelledby="coverageRingTitle coverageRingDescription">
+              <title id="coverageRingTitle">Percentual de indicadores com dados</title>
+              <desc id="coverageRingDescription">Cobertura ainda não carregada.</desc>
+              <circle class="coverage-ring__track" cx="60" cy="60" r="48"></circle>
+              <circle id="coverageRingValue" class="coverage-ring__value" cx="60" cy="60" r="48" pathLength="100"></circle>
+            </svg>
+          </div>
+          <div class="progress" aria-hidden="true">
+            <span id="coverageBar"></span>
+          </div>
+          <p id="coverageDescription">Verificando indicadores com dados publicados.</p>
+        </aside>
+      </section>
+
+      <div id="loadingState" class="state-panel state-panel--loading section-shell" role="status">
+        <span class="loader" aria-hidden="true"></span>
+        <div>
+          <strong>Organizando os indicadores</strong>
+          <span>Carregando dimensões, eixos e resultados.</span>
+        </div>
+      </div>
+
+      <section id="errorState" class="state-panel state-panel--error section-shell" role="alert" hidden>
+        <span class="state-panel__icon" aria-hidden="true">!</span>
+        <div>
+          <strong>Não foi possível carregar os dados</strong>
+          <span id="errorMessage">Tente novamente em instantes.</span>
+        </div>
+        <button id="retryButton" class="button button--secondary" type="button">Tentar novamente</button>
+      </section>
+
+      <div id="dashboardContent" hidden>
+        <section class="stats section-shell" aria-label="Resumo do painel">
+          <article class="stat-card">
+            <span class="stat-card__icon stat-card__icon--blue" aria-hidden="true">D</span>
+            <div>
+              <strong id="dimensionCount">0</strong>
+              <span>dimensões</span>
+            </div>
+          </article>
+          <article class="stat-card">
+            <span class="stat-card__icon stat-card__icon--teal" aria-hidden="true">E</span>
+            <div>
+              <strong id="axisCount">0</strong>
+              <span>eixos monitorados</span>
+            </div>
+          </article>
+          <article class="stat-card">
+            <span class="stat-card__icon stat-card__icon--gold" aria-hidden="true">I</span>
+            <div>
+              <strong id="indicatorCount">0</strong>
+              <span>indicadores</span>
+            </div>
+          </article>
+          <article class="stat-card">
+            <span class="stat-card__icon stat-card__icon--green" aria-hidden="true">R</span>
+            <div>
+              <strong id="measurementCount">0</strong>
+              <span>resultados publicados</span>
+            </div>
+          </article>
+        </section>
+
+        <section id="dimensoes" class="content-section section-shell" aria-labelledby="dimensions-title">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Navegação temática</span>
+              <h2 id="dimensions-title">6 dimensões para entender a cidade</h2>
+              <p>Selecione uma dimensão para explorar seus eixos e indicadores.</p>
+            </div>
+            <button id="showAllDimensionsButton" class="text-button" type="button" hidden>
+              Ver todas as dimensões
+            </button>
+          </div>
+          <div id="dimensionsGrid" class="dimension-grid"></div>
+        </section>
+
+        <section class="trend-section section-shell" aria-labelledby="trend-title">
+          <div class="trend-panel">
+            <div class="trend-panel__heading">
+              <div>
+                <span class="eyebrow">Panorama de evolução</span>
+                <h2 id="trend-title">Como os indicadores estão se movimentando</h2>
+                <p id="trendSummary">Calculando a situação dos indicadores selecionados.</p>
+              </div>
+              <div id="trendLegend" class="trend-legend" aria-label="Legenda do gráfico"></div>
+            </div>
+            <div class="trend-chart">
+              <svg
+                id="trendSvg"
+                viewBox="0 0 960 220"
+                role="img"
+                aria-labelledby="trendChartTitle trendChartDescription"
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <title id="trendChartTitle">Distribuição da situação dos indicadores</title>
+                <desc id="trendChartDescription">O gráfico será atualizado conforme os filtros.</desc>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        <section id="indicadores" class="content-section section-shell" aria-labelledby="indicators-title">
+          <div class="section-heading section-heading--indicators">
+            <div>
+              <span class="eyebrow">Resultados detalhados</span>
+              <h2 id="indicators-title">Indicadores</h2>
+              <p id="indicatorResultCount" aria-live="polite">Carregando resultados…</p>
+            </div>
+            <div class="indicator-actions">
+              {% if request.user.is_staff %}
+                <button id="openUpsertButton" class="button button--primary" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 5v14M5 12h14"></path>
+                  </svg>
+                  Inserir dado
+                </button>
+              {% endif %}
+              <button id="exportButton" class="button button--secondary" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 3v12"></path>
+                  <path d="m7 10 5 5 5-5M5 21h14"></path>
+                </svg>
+                Exportar CSV
+              </button>
+              <div class="view-switcher" role="group" aria-label="Formato de visualização">
+                <button class="view-switcher__button is-active" type="button" data-view="cards" aria-pressed="true">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                  </svg>
+                  <span class="visually-hidden">Exibir em cards</span>
+                </button>
+                <button class="view-switcher__button" type="button" data-view="table" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M4 6h16M4 12h16M4 18h16"></path>
+                  </svg>
+                  <span class="visually-hidden">Exibir em tabela</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="indicatorCards" class="indicator-grid"></div>
+
+          <div id="indicatorTablePanel" class="table-panel" hidden>
+            <table class="indicator-table">
+              <caption class="visually-hidden">Indicadores filtrados da cidade</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Indicador</th>
+                  <th scope="col">Dimensão e eixo</th>
+                  <th scope="col">Resultado atual</th>
+                  <th scope="col">Meta</th>
+                  <th scope="col">Situação</th>
+                  <th scope="col">Período</th>
+                  <th scope="col"><span class="visually-hidden">Ações</span></th>
+                </tr>
+              </thead>
+              <tbody id="indicatorTableBody"></tbody>
+            </table>
+          </div>
+
+          <div id="emptyState" class="empty-state" hidden>
+            <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+              <circle cx="29" cy="29" r="18"></circle>
+              <path d="m43 43 12 12M21 29h16M29 21v16"></path>
+            </svg>
+            <h3>Nenhum indicador encontrado</h3>
+            <p>Tente remover um filtro ou pesquisar por outro termo.</p>
+            <button id="emptyClearButton" class="button button--secondary" type="button">Limpar filtros</button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="section-shell site-footer__inner">
+        <div>
+          <strong>Indicadores da Cidade</strong>
+          <p>Informação pública para acompanhamento, planejamento e participação social.</p>
+          <nav class="site-footer__links" aria-label="Transparência e dados públicos">
+            <a
+              href="https://www.riopreto.sp.gov.br/transparencia"
+              target="_blank"
+              rel="noopener noreferrer external"
+            >Portal da Transparência</a>
+            <a
+              href="https://www.riopreto.sp.gov.br/transparencia/relatorios-e-dados/dados-abertos"
+              target="_blank"
+              rel="noopener noreferrer external"
+            >Dados abertos</a>
+          </nav>
+        </div>
+        <div class="site-footer__meta">
+          <span id="generatedAtText">Painel aguardando atualização.</span>
+          <span>São José do Rio Preto — SP</span>
+        </div>
+      </div>
+    </footer>
+
+    <div id="detailBackdrop" class="drawer-backdrop" hidden></div>
+    <aside
+      id="detailDrawer"
+      class="detail-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="detailTitle"
+      aria-describedby="detailDescription"
+      aria-hidden="true"
+      tabindex="-1"
+    >
+      <div class="detail-drawer__header">
+        <div>
+          <span id="detailDimension" class="eyebrow">Indicador</span>
+          <h2 id="detailTitle">Detalhes do indicador</h2>
+        </div>
+        <button id="closeDetailButton" class="icon-button icon-button--dark" type="button" aria-label="Fechar detalhes">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M6 6l12 12M18 6 6 18"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div id="detailLoading" class="detail-state" role="status">
+        <span class="loader" aria-hidden="true"></span>
+        <span>Carregando série histórica…</span>
+      </div>
+
+      <div id="detailError" class="detail-state detail-state--error" role="alert" hidden>
+        <strong>Não foi possível abrir este indicador.</strong>
+        <button id="retryDetailButton" class="button button--secondary" type="button">Tentar novamente</button>
+      </div>
+
+      <div id="detailContent" class="detail-drawer__content" hidden>
+        <div class="detail-context">
+          <span id="detailAxis">Eixo</span>
+          <span id="detailFrequency">Periodicidade</span>
+          <span id="detailPolarity">Polaridade</span>
+          <span id="detailKind" class="kind-badge" hidden></span>
+        </div>
+
+        <p id="detailDescription" class="detail-description"></p>
+
+        <div class="detail-kpis">
+          <article>
+            <span>Resultado atual</span>
+            <strong id="detailCurrentValue">—</strong>
+            <small id="detailCurrentPeriod">Sem período</small>
+          </article>
+          <article>
+            <span>Meta</span>
+            <strong id="detailTargetValue">—</strong>
+            <small id="detailTargetDeadline">Sem prazo definido</small>
+          </article>
+        </div>
+
+        <div class="detail-status-row">
+          <span id="detailStatus" class="status-badge status-badge--neutral">Sem dados</span>
+          <span id="detailDelta">Sem comparação anterior</span>
+        </div>
+
+        <section class="detail-section" aria-labelledby="series-title">
+          <div class="detail-section__heading">
+            <div>
+              <span class="eyebrow">Evolução no tempo</span>
+              <h3 id="series-title">Série histórica</h3>
+            </div>
+            <span id="detailSeriesCount"></span>
+          </div>
+          <div id="detailChartWrap" class="detail-chart">
+            <svg
+              id="detailSeriesSvg"
+              viewBox="0 0 720 300"
+              role="img"
+              aria-labelledby="detailChartTitle detailChartDescription"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <title id="detailChartTitle">Série histórica do indicador</title>
+              <desc id="detailChartDescription">Os pontos representam os resultados publicados ao longo do tempo.</desc>
+            </svg>
+          </div>
+          <p id="detailNoSeries" class="inline-empty" hidden>Ainda não há resultados publicados para este período.</p>
+          <details class="series-table-details">
+            <summary>Ver valores em tabela</summary>
+            <div class="series-table-wrap">
+              <table class="series-table">
+                <caption class="visually-hidden">Valores da série histórica</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Período</th>
+                    <th scope="col">Valor</th>
+                    <th scope="col">Meta</th>
+                    <th scope="col">Qualidade</th>
+                  </tr>
+                </thead>
+                <tbody id="detailSeriesTableBody"></tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+
+        <section class="detail-section" aria-labelledby="methodology-title">
+          <span class="eyebrow">Como interpretar</span>
+          <h3 id="methodology-title">Metodologia</h3>
+          <p id="detailMethodology">Metodologia não informada.</p>
+        </section>
+
+        <section class="detail-section detail-source" aria-labelledby="source-title">
+          <span class="eyebrow">Rastreabilidade</span>
+          <h3 id="source-title">Fonte dos dados</h3>
+          <a id="detailSourceLink" href="#" target="_blank" rel="noopener noreferrer" hidden></a>
+          <span id="detailSourceText">Fonte não informada.</span>
+          <p id="detailUpdatedAt"></p>
+        </section>
+
+        <div class="detail-drawer__footer">
+          <button id="shareDetailButton" class="button button--secondary" type="button">
+            Copiar link do indicador
+          </button>
+          {% if request.user.is_staff %}
+            <button id="detailUpsertButton" class="button button--primary" type="button">
+              Inserir novo resultado
+            </button>
+          {% endif %}
+        </div>
+      </div>
+    </aside>
+
+    {% if request.user.is_staff %}
+      <dialog id="upsertDialog" class="upsert-dialog" aria-labelledby="upsertTitle">
+        <form id="upsertForm" class="upsert-form">
+          {% csrf_token %}
+          <div class="upsert-dialog__header">
+            <div>
+              <span class="eyebrow">Atualização de dados</span>
+              <h2 id="upsertTitle">Inserir ou atualizar resultado</h2>
+              <p>Uma combinação existente de indicador e período será atualizada.</p>
+            </div>
+            <button id="closeUpsertButton" class="icon-button icon-button--dark" type="button" aria-label="Fechar formulário">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M6 6l12 12M18 6 6 18"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div id="upsertFormError" class="form-alert" role="alert" hidden></div>
+
+          <div class="upsert-form__grid">
+            <div class="field field--full">
+              <label for="measurementIndicator">Indicador <span aria-hidden="true">*</span></label>
+              <select id="measurementIndicator" name="indicator_slug" required>
+                <option value="">Selecione um indicador</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="measurementPeriodStart">Início do período <span aria-hidden="true">*</span></label>
+              <input id="measurementPeriodStart" name="period_start" type="date" required>
+            </div>
+            <div class="field">
+              <label for="measurementPeriodEnd">Fim do período <span aria-hidden="true">*</span></label>
+              <input id="measurementPeriodEnd" name="period_end" type="date" required>
+            </div>
+            <div class="field">
+              <label for="measurementValue">Resultado <span aria-hidden="true">*</span></label>
+              <input id="measurementValue" name="value" type="text" inputmode="decimal" placeholder="Ex.: 92,5" required>
+            </div>
+            <div class="field">
+              <label for="measurementTarget">Meta do período</label>
+              <input id="measurementTarget" name="target_value" type="text" inputmode="decimal" placeholder="Opcional">
+            </div>
+            <div class="field">
+              <label for="measurementQuality">Qualidade</label>
+              <select id="measurementQuality" name="quality">
+                <option value="official">Oficial</option>
+                <option value="verified">Verificada</option>
+                <option value="provisional" selected>Provisória</option>
+                <option value="estimated">Estimada</option>
+                <option value="revised">Revisada</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="measurementSourceName">Fonte</label>
+              <input id="measurementSourceName" name="source_name" type="text" maxlength="240" placeholder="Órgão ou sistema de origem">
+            </div>
+            <div class="field field--full">
+              <label for="measurementSourceUrl">Link da fonte</label>
+              <input id="measurementSourceUrl" name="source_url" type="url" maxlength="1000" placeholder="https://">
+            </div>
+            <div class="field field--full">
+              <label for="measurementNote">Observação</label>
+              <textarea id="measurementNote" name="note" rows="3" placeholder="Contexto relevante sobre o resultado"></textarea>
+            </div>
+          </div>
+
+          <div class="upsert-dialog__footer">
+            <button id="cancelUpsertButton" class="button button--ghost" type="button">Cancelar</button>
+            <button id="submitUpsertButton" class="button button--primary" type="submit">
+              Salvar resultado
+            </button>
+          </div>
+        </form>
+      </dialog>
+    {% endif %}
+
+    <template id="dimensionCardTemplate">
+      <article class="dimension-card">
+        <button class="dimension-card__button" type="button">
+          <span class="dimension-card__top">
+            <span class="dimension-card__number" aria-hidden="true"></span>
+            <span class="dimension-card__arrow" aria-hidden="true">↗</span>
+          </span>
+          <span class="dimension-card__name"></span>
+          <span class="dimension-card__description"></span>
+          <span class="dimension-card__meta">
+            <span class="dimension-card__axes"></span>
+            <span class="dimension-card__indicators"></span>
+          </span>
+        </button>
+      </article>
+    </template>
+
+    <template id="indicatorCardTemplate">
+      <article class="indicator-card">
+        <div class="indicator-card__accent" aria-hidden="true"></div>
+        <div class="indicator-card__head">
+          <span class="indicator-card__dimension"></span>
+          <span class="indicator-card__badges">
+            <span class="kind-badge indicator-card__kind" hidden></span>
+            <span class="status-badge indicator-card__status"></span>
+          </span>
+        </div>
+        <h3 class="indicator-card__name"></h3>
+        <p class="indicator-card__axis"></p>
+        <div class="indicator-card__value-row">
+          <strong class="indicator-card__value"></strong>
+          <span class="indicator-card__delta"></span>
+        </div>
+        <div class="indicator-card__target">
+          <span>Meta</span>
+          <strong></strong>
+        </div>
+        <div class="indicator-card__footer">
+          <span class="indicator-card__period"></span>
+          <button class="text-button indicator-card__details" type="button">Ver detalhes</button>
+        </div>
+      </article>
+    </template>
+
+    <template id="indicatorRowTemplate">
+      <tr>
+        <th scope="row">
+          <button class="table-indicator-button" type="button"></button>
+          <span class="kind-badge table-kind"></span>
+        </th>
+        <td>
+          <span class="table-dimension"></span>
+          <small class="table-axis"></small>
+        </td>
+        <td class="table-current"></td>
+        <td class="table-target"></td>
+        <td><span class="status-badge table-status"></span></td>
+        <td class="table-period"></td>
+        <td>
+          <button class="icon-button icon-button--table table-details" type="button" aria-label="Abrir detalhes">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m9 18 6-6-6-6"></path>
+            </svg>
+          </button>
+        </td>
+      </tr>
+    </template>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+    <div id="screenReaderAnnouncements" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+  </div>
+
+  <noscript>
+    <div class="noscript-message">
+      Ative o JavaScript para usar filtros, gráficos e detalhes interativos deste painel.
+    </div>
+  </noscript>
+  <script src="{% static 'municipal_dashboard/js/dashboard.js' %}" defer></script>
+</body>
+</html>

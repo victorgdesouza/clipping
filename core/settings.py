@@ -90,6 +90,7 @@ GPTNEO_MODEL = os.getenv("GPTNEO_MODEL", "EleutherAI/gpt-neo-2.7B")
 
 INSTALLED_APPS = [
     "newsclip.apps.NewsclipConfig",
+    "municipal_dashboard.apps.MunicipalDashboardConfig",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
