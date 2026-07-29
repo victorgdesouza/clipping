@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+python manage.py migrate --noinput
+python manage.py sync_municipal_catalog
+
 python manage.py qcluster &
 QCLUSTER_PID=$!
 
