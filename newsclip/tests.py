@@ -27,6 +27,7 @@ from newsclip.models import (
     DiscoveryRun,
     FetchLog,
     GeneratedReport,
+    NewsFetchJob,
     Source,
     SourceEndpoint,
     ValidationFeedback,
@@ -1953,6 +1954,26 @@ class ClientAccessTests(TestCase):
             False,
             task_name=f"fetch-news-client-{self.client_record.pk}",
         )
+
+    def test_owner_can_follow_an_existing_fetch_job(self):
+        job = NewsFetchJob.objects.create(
+            client=self.client_record,
+            task_id="existing-task-123",
+            status="running",
+        )
+        self.client.force_login(self.user)
+
+        start_response = self.client.post(
+            reverse("fetch_news", args=[self.client_record.pk]),
+            {"mode": "full"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        status_response = self.client.get(start_response.json()["status_url"])
+
+        self.assertEqual(start_response.status_code, 202)
+        self.assertEqual(start_response.json()["task_id"], job.task_id)
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["status"], "running")
 
     @patch("newsclip.tasks.call_command")
     def test_fetch_news_task_uses_quick_mode_for_interactive_search(self, call_command_mock):

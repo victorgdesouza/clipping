@@ -811,6 +811,11 @@ def fetch_news_view(request, client_id):
     )
     if active_job:
         status_url = reverse("check_task_status", args=[active_job.task_id or active_job.pk])
+        allowed_tasks = request.session.get("news_fetch_tasks", {})
+        if active_job.task_id:
+            allowed_tasks[str(active_job.task_id)] = client_id
+        allowed_tasks[str(active_job.pk)] = client_id
+        request.session["news_fetch_tasks"] = allowed_tasks
         payload = {
             "status": active_job.status,
             "message": "Ja existe uma busca em andamento para este cliente.",

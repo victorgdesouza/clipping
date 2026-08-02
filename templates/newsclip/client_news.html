@@ -38,8 +38,8 @@
     const fetchButtons = Array.from(document.querySelectorAll('.fetch-news-action'));
     const overlay = document.getElementById('loading-overlay');
     let pollTimer = null;
-    let pollAttempts = 0;
-    const maxPollAttempts = 40; // ~2 minutos; a busca pode continuar no servidor
+    let consecutivePollErrors = 0;
+    const maxConsecutivePollErrors = 10;
 
     function finishFetch(message, isError = false) {
       if (pollTimer) clearTimeout(pollTimer);
@@ -50,17 +50,13 @@
     }
 
     function pollFetch(statusUrl) {
-      pollAttempts += 1;
-      if (pollAttempts > maxPollAttempts) {
-        finishFetch('Tempo limite de acompanhamento atingido. A busca pode continuar em segundo plano; tente atualizar a pagina em instantes.', true);
-        return;
-      }
       fetch(statusUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(response => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           return response.json();
         })
         .then(data => {
+          consecutivePollErrors = 0;
           if (data.status === 'DONE' || data.status === 'completed') {
             finishFetch(data.result || (data.success ? 'Busca finalizada.' : 'A busca falhou.'), !data.success);
             return;
@@ -73,7 +69,12 @@
         })
         .catch(err => {
           console.error('Status error:', err);
-          finishFetch('Nao foi possivel acompanhar a busca. Ela pode continuar em segundo plano.', true);
+          consecutivePollErrors += 1;
+          if (consecutivePollErrors >= maxConsecutivePollErrors) {
+            finishFetch('Nao foi possivel acompanhar a busca. Ela pode continuar em segundo plano.', true);
+            return;
+          }
+          pollTimer = setTimeout(() => pollFetch(statusUrl), 3000);
         });
     }
 
@@ -81,7 +82,7 @@
       btnFetch.addEventListener('click', e => {
         e.preventDefault();
         const searchMode = btnFetch.dataset.mode || 'quick';
-        pollAttempts = 0;
+        consecutivePollErrors = 0;
         fetchButtons.forEach(button => button.disabled = true);
         overlay.style.display = 'flex';
         const formData = new FormData();
