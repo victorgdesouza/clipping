@@ -236,12 +236,14 @@ def manual_rejection_filter():
 
 def article_status_counts(client):
     base = Article.objects.filter(client=client, excluded=False)
-    return {
+    counts = {
         "accepted": base.filter(validation_status="ACCEPTED").count(),
         "review": base.filter(validation_status="REVIEW").count(),
         "rejected": base.filter(manual_rejection_filter()).count(),
         "discarded": base.filter(automatic_rejection_filter()).count(),
     }
+    counts["pending"] = base.exclude(validation_status="ACCEPTED").count()
+    return counts
 
 
 class SignUpView(CreateView):
@@ -593,24 +595,21 @@ def client_news(request, client_id):
     requested_sort = request.GET.get("sort")
     source_filter = request.GET.get("source", "")
     current_search_query = request.GET.get("q", "")
-    status_filter = request.GET.get("status", "accepted")
+    requested_status = request.GET.get("status", "accepted")
+    legacy_pending_statuses = {"pending", "review", "rejected", "discarded"}
+    status_filter = "pending" if requested_status in legacy_pending_statuses else "accepted"
     allowed_sort_orders = {"date-desc", "date-asc", "source"}
-    if status_filter == "review":
+    if status_filter == "pending":
         allowed_sort_orders.add("priority")
-    default_sort_order = "priority" if status_filter == "review" else "date-desc"
+    default_sort_order = "priority" if status_filter == "pending" else "date-desc"
     sort_order = requested_sort if requested_sort in allowed_sort_orders else default_sort_order
 
     revalidate_accepted_articles_for_client(client, limit=150)
     base_articles_qs = Article.objects.filter(client=client, excluded=False)
     status_counts = article_status_counts(client)
-    if status_filter == "review":
-        articles_qs = base_articles_qs.filter(validation_status="REVIEW")
-    elif status_filter == "rejected":
-        articles_qs = base_articles_qs.filter(manual_rejection_filter())
-    elif status_filter == "discarded":
-        articles_qs = base_articles_qs.filter(automatic_rejection_filter())
+    if status_filter == "pending":
+        articles_qs = base_articles_qs.exclude(validation_status="ACCEPTED")
     else:
-        status_filter = "accepted"
         articles_qs = base_articles_qs.filter(validation_status="ACCEPTED")
 
     if source_filter:
@@ -659,7 +658,7 @@ def client_news(request, client_id):
         return redirect(f"{redirect_url}?{query_params}" if query_params else redirect_url)
 
     display_articles = deduplicate_articles_for_display(articles_qs)
-    if status_filter == "review" and sort_order == "priority":
+    if status_filter == "pending" and sort_order == "priority":
         display_articles = sort_review_articles_by_priority(display_articles, client)
     paginator = Paginator(display_articles, page_size)
     try:
@@ -742,8 +741,8 @@ def bulk_update_news(request, client_id):
             validation_status="REJECTED",
             validation_reason="Invalidada manualmente pelo usuario",
         )
-        verb = "movida(s) para Rejeitadas"
-        destination = "Rejeitadas"
+        verb = "movida(s) para validacao"
+        destination = "Para validacao"
         target_status = "rejected"
     elif action == "review":
         updated_count = articles_qs.update(
@@ -751,8 +750,8 @@ def bulk_update_news(request, client_id):
             validation_status="REVIEW",
             validation_reason="Movida manualmente para revisao pelo usuario",
         )
-        verb = "movida(s) para Revisar"
-        destination = "Revisar"
+        verb = "movida(s) para validacao"
+        destination = "Para validacao"
         target_status = "review"
     else:
         updated_count = articles_qs.update(

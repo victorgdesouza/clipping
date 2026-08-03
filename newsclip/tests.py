@@ -1309,7 +1309,7 @@ class ClientAccessTests(TestCase):
         self.assertNotContains(response, "<th>Fonte</th>", html=True)
         self.assertNotContains(response, "<th>Qualidade</th>", html=True)
 
-    def test_client_news_review_queue_is_visible(self):
+    def test_client_news_pending_queue_is_visible(self):
         Article.objects.create(
             client=self.client_record,
             title="Cliente Teste em noticia ambigua",
@@ -1323,15 +1323,15 @@ class ClientAccessTests(TestCase):
         )
         self.client.force_login(self.user)
 
-        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=pending")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'data-status-count="review"')
+        self.assertContains(response, 'data-status-count="pending"')
         self.assertContains(response, 'data-count="1"')
         self.assertContains(response, "Cliente Teste em noticia ambigua")
         self.assertContains(response, "Identidade fraca + contexto")
 
-    def test_client_news_separates_manual_rejected_from_automatic_discarded(self):
+    def test_client_news_groups_all_non_validated_articles_in_pending_queue(self):
         manual_rejected = Article.objects.create(
             client=self.client_record,
             title="Cliente Teste rejeitada manualmente",
@@ -1366,15 +1366,17 @@ class ClientAccessTests(TestCase):
         )
         self.client.force_login(self.user)
 
-        rejected_response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=rejected")
-        discarded_response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=discarded")
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=pending")
 
-        self.assertContains(rejected_response, 'data-status-count="discarded"')
-        self.assertContains(rejected_response, 'data-count="1"')
-        self.assertContains(rejected_response, "Cliente Teste rejeitada manualmente")
-        self.assertNotContains(rejected_response, "Cliente Teste descartada pelo robo")
-        self.assertContains(discarded_response, "Cliente Teste descartada pelo robo")
-        self.assertNotContains(discarded_response, "Cliente Teste rejeitada manualmente")
+        self.assertContains(response, 'data-status-count="pending"')
+        self.assertContains(response, 'data-count="2"')
+        self.assertContains(response, "Validadas (")
+        self.assertContains(response, "Para validação (")
+        self.assertContains(response, "Cliente Teste rejeitada manualmente")
+        self.assertContains(response, "Cliente Teste descartada pelo robo")
+        self.assertNotContains(response, ">Revisar (")
+        self.assertNotContains(response, ">Rejeitadas (")
+        self.assertNotContains(response, ">Descartadas (")
 
     def test_review_queue_defaults_to_triage_priority_and_allows_date_sort(self):
         now = timezone.now()
@@ -1413,7 +1415,7 @@ class ClientAccessTests(TestCase):
         )
         self.client.force_login(self.user)
 
-        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=pending")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["sort"], "priority")
@@ -1423,7 +1425,7 @@ class ClientAccessTests(TestCase):
         self.assertLess(content.index(same_score_unknown.title), content.index(newest_low_score.title))
 
         response = self.client.get(
-            reverse("client_news", args=[self.client_record.pk]) + "?status=review&sort=date-desc"
+            reverse("client_news", args=[self.client_record.pk]) + "?status=pending&sort=date-desc"
         )
         content = response.content.decode()
         self.assertEqual(response.context["sort"], "date-desc")
@@ -1466,19 +1468,21 @@ class ClientAccessTests(TestCase):
         )
         self.client.force_login(self.user)
 
-        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=pending")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "const bulkUpdateUrl = form ? form.getAttribute('action') : '';")
         self.assertContains(response, "fetch(bulkUpdateUrl, {")
         self.assertNotContains(response, "setAction(actionValue)")
         self.assertContains(response, "Validar selecionadas")
-        self.assertContains(response, "Invalidar selecionadas")
+        self.assertNotContains(response, "Invalidar selecionadas")
+        self.assertNotContains(response, "Mover para revisão")
         self.assertContains(response, "<th>Ações</th>", html=True)
         self.assertContains(response, 'data-action="validate"')
-        self.assertContains(response, 'data-action="reject"')
+        self.assertNotContains(response, 'data-action="reject"')
         self.assertContains(response, 'id="review-feedback"')
         self.assertContains(response, 'data-status-count="accepted"')
+        self.assertContains(response, 'data-status-count="pending"')
 
         response = self.client.post(
             reverse("bulk_update_news", args=[self.client_record.pk]),
@@ -1504,7 +1508,7 @@ class ClientAccessTests(TestCase):
         self.assertEqual(review_feedback.base_status, "REVIEW")
         self.assertEqual(review_feedback.decided_by, self.user)
 
-        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=pending")
         self.assertNotContains(response, "Cliente Teste em noticia para validar")
 
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
@@ -1576,7 +1580,7 @@ class ClientAccessTests(TestCase):
         response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=accepted")
         self.assertNotContains(response, "Cliente Teste em noticia rejeitada para manter")
 
-        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=review")
+        response = self.client.get(reverse("client_news", args=[self.client_record.pk]) + "?status=pending")
         self.assertContains(response, "Cliente Teste em noticia rejeitada para manter")
 
     def test_owner_can_save_client_and_reprocess_pending_articles(self):

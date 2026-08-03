@@ -210,9 +210,7 @@
       }
       if (data.status_counts) {
         setTabCount('accepted', data.status_counts.accepted);
-        setTabCount('review', data.status_counts.review);
-        setTabCount('rejected', data.status_counts.rejected);
-        setTabCount('discarded', data.status_counts.discarded);
+        setTabCount('pending', data.status_counts.pending);
       }
       if (selectAll) selectAll.checked = false;
       updateBulkActions();
@@ -306,9 +304,7 @@
 
     const bulkButtons = {
       'btn-exclude-selected': 'exclude',
-      'btn-keep-selected': 'keep',
       'btn-validate-selected': 'validate',
-      'btn-reject-selected': 'reject',
       'btn-review-selected': 'review'
     };
     Object.entries(bulkButtons).forEach(([buttonId, actionValue]) => {
@@ -337,7 +333,7 @@
   <div class="filter-group">
     <label for="sort">Ordenar por:</label>
     <select id="sort" name="sort">
-      {% if status_filter == "review" %}
+      {% if status_filter == "pending" %}
       <option value="priority" {% if sort == "priority" %}selected{% endif %}>Prioridade de revisão</option>
       {% endif %}
       <option value="date-desc" {% if sort == "date-desc" %}selected{% endif %}>Data (mais recente)</option>
@@ -352,17 +348,9 @@
      href="?status=accepted&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
     Validadas (<span data-status-count="accepted" data-count="{{ status_counts.accepted|default:0 }}">{{ status_counts.accepted|default:0 }}</span>)
   </a>
-  <a class="button {% if status_filter == 'review' %}{% else %}button-ghost{% endif %}"
-     href="?status=review&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
-    Revisar (<span data-status-count="review" data-count="{{ status_counts.review|default:0 }}">{{ status_counts.review|default:0 }}</span>)
-  </a>
-  <a class="button {% if status_filter == 'rejected' %}{% else %}button-ghost{% endif %}"
-     href="?status=rejected&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
-    Rejeitadas (<span data-status-count="rejected" data-count="{{ status_counts.rejected|default:0 }}">{{ status_counts.rejected|default:0 }}</span>)
-  </a>
-  <a class="button {% if status_filter == 'discarded' %}{% else %}button-ghost{% endif %}"
-     href="?status=discarded&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
-    Descartadas (<span data-status-count="discarded" data-count="{{ status_counts.discarded|default:0 }}">{{ status_counts.discarded|default:0 }}</span>)
+  <a class="button {% if status_filter == 'pending' %}{% else %}button-ghost{% endif %}"
+     href="?status=pending&page_size={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}{% if current_search_query %}&q={{ current_search_query }}{% endif %}">
+    Para validação (<span data-status-count="pending" data-count="{{ status_counts.pending|default:0 }}">{{ status_counts.pending|default:0 }}</span>)
   </a>
 </div>
 
@@ -387,20 +375,11 @@
       <button type="button" id="btn-validate-selected" class="button">
         Validar selecionadas
       </button>
-    {% endif %}
-    {% if status_filter != "rejected" %}
-      <button type="button" id="btn-reject-selected" class="button button-ghost">
-        Invalidar selecionadas
-      </button>
-    {% endif %}
-    {% if status_filter != "review" %}
+    {% else %}
       <button type="button" id="btn-review-selected" class="button button-ghost">
-        Mover para revisão
+        Enviar para validação
       </button>
     {% endif %}
-    <button type="button" id="btn-keep-selected" class="button button-ghost">
-      Manter selecionadas
-    </button>
     <button type="button" id="btn-exclude-selected" class="button button-danger">
       Excluir selecionadas
     </button>
@@ -426,12 +405,8 @@
           <div class="quick-review-actions">
             {% if status_filter != "accepted" %}
               <button type="button" class="button button-small quick-review-action" data-action="validate" data-article-id="{{ art.id }}">Validar</button>
-            {% endif %}
-            {% if status_filter != "rejected" %}
-              <button type="button" class="button button-small button-ghost quick-review-action" data-action="reject" data-article-id="{{ art.id }}">Rejeitar</button>
-            {% endif %}
-            {% if status_filter != "review" %}
-              <button type="button" class="button button-small button-ghost quick-review-action" data-action="review" data-article-id="{{ art.id }}">Revisar</button>
+            {% else %}
+              <button type="button" class="button button-small button-ghost quick-review-action" data-action="review" data-article-id="{{ art.id }}">Enviar para validação</button>
             {% endif %}
           </div>
         </td>
