@@ -66,6 +66,7 @@ class Command(BaseCommand):
         if is_quantitative_report:
             first_articles = self._articles_for_period(client, start_date, end_date)
             first_label = self._format_period(start_date, end_date)
+            article_groups = [(f"Artigos - {first_label}", first_articles)]
             if comparison_start_option:
                 comparison_start = self._parse_date(comparison_start_option, "inicio do segundo periodo")
                 comparison_end = self._parse_date(comparison_end_option, "fim do segundo periodo")
@@ -73,6 +74,7 @@ class Command(BaseCommand):
                     raise CommandError("O fim do segundo periodo deve ser igual ou posterior ao inicio.")
                 second_articles = self._articles_for_period(client, comparison_start, comparison_end)
                 second_label = self._format_period(comparison_start, comparison_end)
+                article_groups.append((f"Artigos - {second_label}", second_articles))
                 dataframe = self._comparison_dataframe(first_label, len(first_articles), second_label, len(second_articles))
                 report_title = f"Relatorio comparativo de clipping - {client.name}"
                 period_label = f"comparativo_{start_date:%Y%m%d}-{end_date:%Y%m%d}_vs_{comparison_start:%Y%m%d}-{comparison_end:%Y%m%d}"
@@ -80,7 +82,7 @@ class Command(BaseCommand):
                 dataframe = pd.DataFrame([{"Periodo": first_label, "Quantidade de noticias": len(first_articles)}])
                 report_title = f"Relatorio personalizado de clipping - {client.name}"
                 period_label = f"personalizado_{start_date:%Y%m%d}-{end_date:%Y%m%d}"
-            content = self._build_quantitative_content(dataframe, output_format, report_title, now)
+            content = self._build_quantitative_content(dataframe, article_groups, output_format, report_title, now)
         else:
             try:
                 days = None if days_option.lower() == "all" else int(days_option)
@@ -147,27 +149,77 @@ class Command(BaseCommand):
         variation = "N/A" if first_count == 0 else f"{(difference / first_count) * 100:.1f}%"
         return pd.DataFrame([{"Primeiro periodo": first_label, "Quantidade": first_count, "Segundo periodo": second_label, "Quantidade do segundo periodo": second_count, "Diferenca": difference, "Variacao": variation}])
 
-    def _build_quantitative_content(self, dataframe, output_format, title, now):
+    @staticmethod
+    def _articles_dataframe(articles):
+        return pd.DataFrame(
+            [
+                {
+                    "Titulo": article.title,
+                    "Data": article.published_at.astimezone(timezone.get_current_timezone()).strftime("%d/%m/%Y %H:%M") if article.published_at else "N/A",
+                    "Fonte": article.source,
+                    "Link": article.url,
+                }
+                for article in articles
+            ],
+            columns=["Titulo", "Data", "Fonte", "Link"],
+        )
+
+    @staticmethod
+    def _write_dataframe_to_sheet(writer, dataframe, sheet_name, width_limit=80):
+        dataframe.to_excel(writer, index=False, sheet_name=sheet_name)
+        worksheet = writer.sheets[sheet_name]
+        max_row, max_col = dataframe.shape
+        if max_row:
+            worksheet.add_table(
+                0,
+                0,
+                max_row,
+                max_col - 1,
+                {"columns": [{"header": heading} for heading in dataframe.columns], "style": "Table Style Medium 9", "autofilter": True},
+            )
+        else:
+            worksheet.set_row(0, None, writer.book.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#2457A6"}))
+        for index, column in enumerate(dataframe.columns):
+            width = max(dataframe[column].astype(str).map(len).max(), len(column)) + 2 if len(dataframe.index) else len(column) + 2
+            worksheet.set_column(index, index, min(width, width_limit))
+
+    def _build_quantitative_content(self, dataframe, article_groups, output_format, title, now):
         output = BytesIO()
         if output_format == "csv":
-            return dataframe.to_csv(index=False).encode("utf-8-sig")
+            summary = dataframe.copy()
+            summary.insert(0, "Tipo de registro", "Resumo")
+            detail_frames = []
+            for period_label, articles in article_groups:
+                details = self._articles_dataframe(articles)
+                details.insert(0, "Tipo de registro", "Noticia")
+                details.insert(1, "Periodo", period_label.removeprefix("Artigos - "))
+                detail_frames.append(details)
+            return pd.concat([summary, *detail_frames], ignore_index=True, sort=False).to_csv(index=False).encode("utf-8-sig")
         if output_format == "xlsx":
             with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                dataframe.to_excel(writer, index=False, sheet_name="Resumo")
-                worksheet = writer.sheets["Resumo"]
-                max_row, max_col = dataframe.shape
-                worksheet.add_table(0, 0, max_row, max_col - 1, {"columns": [{"header": heading} for heading in dataframe.columns], "style": "Table Style Medium 9"})
-                for index, column in enumerate(dataframe.columns):
-                    width = max(dataframe[column].astype(str).map(len).max(), len(column)) + 2
-                    worksheet.set_column(index, index, min(width, 35))
+                self._write_dataframe_to_sheet(writer, dataframe, "Resumo", width_limit=35)
+                for index, (period_label, articles) in enumerate(article_groups, start=1):
+                    self._write_dataframe_to_sheet(writer, self._articles_dataframe(articles), f"Artigos {index}")
             return output.getvalue()
 
         styles = getSampleStyleSheet()
         document = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=1 * cm, leftMargin=1 * cm, topMargin=1 * cm, bottomMargin=1 * cm, title=title)
-        table_data = [list(dataframe.columns)] + dataframe.astype(str).values.tolist()
-        table = Table(table_data, repeatRows=1)
-        table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2457A6")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2CC")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-        document.build([Paragraph(html.escape(title), styles["Title"]), Paragraph(f"Gerado em: {now.strftime('%d/%m/%Y %H:%M')}", styles["BodyText"]), Spacer(1, 0.4 * cm), table])
+        cell_style = ParagraphStyle("QuantitativeReportCell", parent=styles["BodyText"], fontSize=7, leading=9, splitLongWords=True)
+        header_style = ParagraphStyle("QuantitativeReportHeader", parent=cell_style, textColor=colors.white, fontName="Helvetica-Bold")
+        summary_data = [[Paragraph(str(label), header_style) for label in dataframe.columns]] + [[Paragraph(html.escape(str(value)), cell_style) for value in row] for row in dataframe.values.tolist()]
+        story = [Paragraph(html.escape(title), styles["Title"]), Paragraph(f"Gerado em: {now.strftime('%d/%m/%Y %H:%M')}", styles["BodyText"]), Spacer(1, 0.4 * cm), Table(summary_data, repeatRows=1)]
+        story[-1].setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2457A6")), ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2CC")), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        for period_label, articles in article_groups:
+            details = self._articles_dataframe(articles)
+            story.extend([Spacer(1, 0.5 * cm), Paragraph(html.escape(period_label), styles["Heading2"])])
+            detail_data = [[Paragraph(label, header_style) for label in ("Titulo", "Data", "Fonte", "Link")]]
+            for row in details.to_dict("records"):
+                url = html.escape(str(row["Link"]), quote=True)
+                detail_data.append([Paragraph(html.escape(str(row["Titulo"])), cell_style), Paragraph(html.escape(str(row["Data"])), cell_style), Paragraph(html.escape(str(row["Fonte"])), cell_style), Paragraph(f'<link href="{url}">Abrir materia</link>', cell_style)])
+            detail_table = Table(detail_data, colWidths=[8.5 * cm, 3.2 * cm, 4.2 * cm, 10 * cm], repeatRows=1)
+            detail_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2457A6")), ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2CC")), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+            story.append(detail_table)
+        document.build(story)
         return output.getvalue()
 
     def _build_content(self, dataframe, data, output_format, client, days, now):

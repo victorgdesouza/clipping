@@ -16,7 +16,7 @@
     <h2>Gerar novo relatorio</h2>
     <p class="section-copy">Escolha um periodo personalizado ou compare a quantidade de noticias entre dois periodos.</p>
 
-    <form action="{% url 'generate_report_view' client.id %}" method="post" class="stacked-form">
+    <form action="{% url 'generate_report_view' client.id %}" method="post" class="stacked-form" id="report-generation-form">
       {% csrf_token %}
       <div class="form-group">
         <label for="{{ form.report_type.id_for_label }}">{{ form.report_type.label }}</label>
@@ -52,7 +52,12 @@
         {{ form.out_format.errors }}
       </div>
       {{ form.non_field_errors }}
-      <button type="submit" class="button button-full">Gerar relatorio</button>
+      <button type="submit" class="button button-full" id="generate-report-button">
+        <span id="generate-report-label">Gerar relatorio</span>
+      </button>
+      <p id="report-generation-status" class="section-copy" role="status" aria-live="polite" hidden>
+        Gerando relatorio. Isso pode levar alguns instantes; nao feche esta pagina.
+      </p>
     </form>
   </section>
 
@@ -86,8 +91,19 @@
   (() => {
     const type = document.getElementById("{{ form.report_type.id_for_label }}");
     const comparison = document.getElementById("comparison-fields");
+    const form = document.getElementById("report-generation-form");
+    const button = document.getElementById("generate-report-button");
+    const buttonLabel = document.getElementById("generate-report-label");
+    const status = document.getElementById("report-generation-status");
     const update = () => { comparison.hidden = type.value !== "comparative"; };
     type.addEventListener("change", update);
+    form.addEventListener("submit", () => {
+      if (!form.checkValidity()) return;
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      buttonLabel.textContent = "Gerando relatorio...";
+      status.hidden = false;
+    });
     update();
   })();
 </script>

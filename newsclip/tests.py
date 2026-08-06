@@ -2083,7 +2083,8 @@ class ReportGenerationTests(TestCase):
         content = bytes(report.content).decode("utf-8-sig")
         self.assertIn("Quantidade de noticias", content)
         self.assertIn(",1", content)
-        self.assertNotIn("Cliente Relatorio aparece", content)
+        self.assertIn("Cliente Relatorio aparece", content)
+        self.assertIn("https://example.com/noticia", content)
 
     def test_comparative_report_shows_the_two_periods_and_difference(self):
         today = timezone.localdate()
@@ -2120,6 +2121,8 @@ class ReportGenerationTests(TestCase):
         self.assertIn(previous_day.strftime("%d/%m/%Y"), content)
         self.assertIn(today.strftime("%d/%m/%Y"), content)
         self.assertIn(",-1,", content)
+        self.assertIn("Outra noticia do primeiro periodo", content)
+        self.assertIn("Cliente Relatorio aparece", content)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
