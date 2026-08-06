@@ -2068,6 +2068,59 @@ class ReportGenerationTests(TestCase):
         self.assertIn("Rio Preto Country Bulls terá nova edição", content)
         self.assertNotIn("Exportação de gado vivo", content)
 
+    def test_custom_report_contains_only_the_quantity_for_the_selected_dates(self):
+        report_date = timezone.localdate()
+        call_command(
+            "generate_report",
+            client_id=self.client_record.pk,
+            start_date=report_date.isoformat(),
+            end_date=report_date.isoformat(),
+            format="csv",
+            created_by_id=self.user.pk,
+        )
+
+        report = GeneratedReport.objects.get(client=self.client_record, period_label__startswith="personalizado_")
+        content = bytes(report.content).decode("utf-8-sig")
+        self.assertIn("Quantidade de noticias", content)
+        self.assertIn(",1", content)
+        self.assertNotIn("Cliente Relatorio aparece", content)
+
+    def test_comparative_report_shows_the_two_periods_and_difference(self):
+        today = timezone.localdate()
+        previous_day = today - timedelta(days=1)
+        Article.objects.create(
+            client=self.client_record,
+            title="Outra noticia do primeiro periodo",
+            url="https://example.com/noticia-anterior",
+            source="Fonte Teste",
+            published_at=timezone.make_aware(datetime.combine(previous_day, datetime.min.time())),
+        )
+        Article.objects.create(
+            client=self.client_record,
+            title="Segunda noticia do primeiro periodo",
+            url="https://example.com/noticia-anterior-2",
+            source="Fonte Teste",
+            published_at=timezone.make_aware(datetime.combine(previous_day, datetime.min.time())),
+        )
+
+        call_command(
+            "generate_report",
+            client_id=self.client_record.pk,
+            start_date=previous_day.isoformat(),
+            end_date=previous_day.isoformat(),
+            comparison_start_date=today.isoformat(),
+            comparison_end_date=today.isoformat(),
+            format="csv",
+            created_by_id=self.user.pk,
+        )
+
+        report = GeneratedReport.objects.get(client=self.client_record, period_label__startswith="comparativo_")
+        content = bytes(report.content).decode("utf-8-sig")
+        self.assertIn("Primeiro periodo", content)
+        self.assertIn(previous_day.strftime("%d/%m/%Y"), content)
+        self.assertIn(today.strftime("%d/%m/%Y"), content)
+        self.assertIn(",-1,", content)
+
 
 @override_settings(SECURE_SSL_REDIRECT=False)
 class ReportAuthorizationTests(TestCase):

@@ -5,12 +5,9 @@ from .models import Client
 
 
 class ReportForm(forms.Form):
-    DAYS_CHOICES = [
-        ("15", "Ultimos 15 dias"),
-        ("30", "Ultimos 30 dias"),
-        ("60", "Ultimos 60 dias"),
-        ("90", "Ultimos 90 dias"),
-        ("all", "Relatorio completo"),
+    REPORT_TYPE_CHOICES = [
+        ("custom", "Personalizado"),
+        ("comparative", "Comparativo"),
     ]
     FORMAT_CHOICES = [
         ("pdf", "PDF"),
@@ -18,8 +15,32 @@ class ReportForm(forms.Form):
         ("csv", "CSV"),
     ]
 
-    days = forms.ChoiceField(choices=DAYS_CHOICES, label="Intervalo")
+    report_type = forms.ChoiceField(choices=REPORT_TYPE_CHOICES, label="Tipo de relatorio")
+    start_date = forms.DateField(required=False, label="Data inicial", widget=forms.DateInput(attrs={"type": "date"}))
+    end_date = forms.DateField(required=False, label="Data final", widget=forms.DateInput(attrs={"type": "date"}))
+    comparison_start_date = forms.DateField(required=False, label="Inicio do segundo periodo", widget=forms.DateInput(attrs={"type": "date"}))
+    comparison_end_date = forms.DateField(required=False, label="Fim do segundo periodo", widget=forms.DateInput(attrs={"type": "date"}))
     out_format = forms.ChoiceField(choices=FORMAT_CHOICES, label="Formato")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        report_type = cleaned_data.get("report_type")
+
+        if not start_date or not end_date:
+            raise forms.ValidationError("Informe a data inicial e a data final do primeiro periodo.")
+        if end_date < start_date:
+            self.add_error("end_date", "A data final deve ser igual ou posterior a data inicial.")
+
+        if report_type == "comparative":
+            comparison_start = cleaned_data.get("comparison_start_date")
+            comparison_end = cleaned_data.get("comparison_end_date")
+            if not comparison_start or not comparison_end:
+                raise forms.ValidationError("Informe as duas datas do segundo periodo.")
+            elif comparison_end < comparison_start:
+                self.add_error("comparison_end_date", "O fim do segundo periodo deve ser igual ou posterior ao inicio.")
+        return cleaned_data
 
 
 class ClientForm(forms.ModelForm):

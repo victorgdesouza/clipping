@@ -1,4 +1,5 @@
 import html
+from datetime import date
 from io import BytesIO
 
 import pandas as pd
@@ -28,7 +29,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--client_id", type=int, required=True)
-        parser.add_argument("--days", type=str, required=True)
+        parser.add_argument("--days", type=str)
+        parser.add_argument("--start-date", type=str)
+        parser.add_argument("--end-date", type=str)
+        parser.add_argument("--comparison-start-date", type=str)
+        parser.add_argument("--comparison-end-date", type=str)
         parser.add_argument("--format", choices=["pdf", "xlsx", "csv"], required=True)
         parser.add_argument("--created_by_id", type=int, required=False)
 
@@ -37,45 +42,63 @@ class Command(BaseCommand):
         if client is None:
             raise CommandError(f"Cliente {options['client_id']} nao encontrado.")
 
-        days_option = options["days"]
-        try:
-            days = None if days_option.lower() == "all" else int(days_option)
-        except ValueError as exc:
-            raise CommandError("O periodo deve ser um numero de dias ou 'all'.") from exc
+        days_option = options.get("days")
+        start_date_option = options.get("start_date")
+        end_date_option = options.get("end_date")
+        comparison_start_option = options.get("comparison_start_date")
+        comparison_end_option = options.get("comparison_end_date")
+        is_quantitative_report = bool(start_date_option or end_date_option)
+        if is_quantitative_report:
+            if not start_date_option or not end_date_option:
+                raise CommandError("Informe data inicial e data final para o relatorio personalizado.")
+            start_date = self._parse_date(start_date_option, "data inicial")
+            end_date = self._parse_date(end_date_option, "data final")
+            if end_date < start_date:
+                raise CommandError("A data final deve ser igual ou posterior a data inicial.")
+            if bool(comparison_start_option) != bool(comparison_end_option):
+                raise CommandError("Informe inicio e fim do segundo periodo para o comparativo.")
+        elif days_option is None:
+            raise CommandError("Informe --days ou as datas de um relatorio personalizado.")
 
         now = timezone.now()
         revalidate_accepted_articles_for_client(client, limit=3000)
-        articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
-        if days is not None:
-            articles = articles.filter(
-                published_at__gte=now - relativedelta(days=days),
-                published_at__lte=now,
-            )
-        articles = deduplicate_articles_for_display(articles.order_by("published_at", "id"))
-
-        if not articles:
-            raise CommandError(f"{client.name}: nenhum artigo disponivel para o periodo.")
-
-        data = [
-            {
-                "Titulo": article.title,
-                "Data": (
-                    article.published_at.astimezone(timezone.get_current_timezone()).strftime("%d/%m/%Y %H:%M")
-                    if article.published_at
-                    else "N/A"
-                ),
-                "Link": article.url,
-                "Fonte": article.source,
-            }
-            for article in articles
-        ]
-        dataframe = pd.DataFrame(data)
         output_format = options["format"]
-        content = self._build_content(dataframe, data, output_format, client, days, now)
+        if is_quantitative_report:
+            first_articles = self._articles_for_period(client, start_date, end_date)
+            first_label = self._format_period(start_date, end_date)
+            if comparison_start_option:
+                comparison_start = self._parse_date(comparison_start_option, "inicio do segundo periodo")
+                comparison_end = self._parse_date(comparison_end_option, "fim do segundo periodo")
+                if comparison_end < comparison_start:
+                    raise CommandError("O fim do segundo periodo deve ser igual ou posterior ao inicio.")
+                second_articles = self._articles_for_period(client, comparison_start, comparison_end)
+                second_label = self._format_period(comparison_start, comparison_end)
+                dataframe = self._comparison_dataframe(first_label, len(first_articles), second_label, len(second_articles))
+                report_title = f"Relatorio comparativo de clipping - {client.name}"
+                period_label = f"comparativo_{start_date:%Y%m%d}-{end_date:%Y%m%d}_vs_{comparison_start:%Y%m%d}-{comparison_end:%Y%m%d}"
+            else:
+                dataframe = pd.DataFrame([{"Periodo": first_label, "Quantidade de noticias": len(first_articles)}])
+                report_title = f"Relatorio personalizado de clipping - {client.name}"
+                period_label = f"personalizado_{start_date:%Y%m%d}-{end_date:%Y%m%d}"
+            content = self._build_quantitative_content(dataframe, output_format, report_title, now)
+        else:
+            try:
+                days = None if days_option.lower() == "all" else int(days_option)
+            except ValueError as exc:
+                raise CommandError("O periodo deve ser um numero de dias ou 'all'.") from exc
+            articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED")
+            if days is not None:
+                articles = articles.filter(published_at__gte=now - relativedelta(days=days), published_at__lte=now)
+            articles = deduplicate_articles_for_display(articles.order_by("published_at", "id"))
+            if not articles:
+                raise CommandError(f"{client.name}: nenhum artigo disponivel para o periodo.")
+            data = [{"Titulo": article.title, "Data": article.published_at.astimezone(timezone.get_current_timezone()).strftime("%d/%m/%Y %H:%M") if article.published_at else "N/A", "Link": article.url, "Fonte": article.source} for article in articles]
+            dataframe = pd.DataFrame(data)
+            content = self._build_content(dataframe, data, output_format, client, days, now)
+            period_label = f"{days}d" if days is not None else "all"
 
         slug = slugify(client.name)
         date_string = now.strftime("%d%m%Y")
-        period_label = f"{days}d" if days is not None else "all"
         prefix = f"relatorio_{slug}_{date_string}_v"
         existing_names = GeneratedReport.objects.filter(
             client=client,
@@ -101,6 +124,51 @@ class Command(BaseCommand):
             size=len(content),
         )
         self.stdout.write(self.style.SUCCESS(f"Relatorio armazenado: {report.filename} ({report.size} bytes)"))
+
+    @staticmethod
+    def _parse_date(value, label):
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            raise CommandError(f"{label.capitalize()} invalida. Use o formato AAAA-MM-DD.") from exc
+
+    @staticmethod
+    def _format_period(start_date, end_date):
+        return f"{start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}"
+
+    @staticmethod
+    def _articles_for_period(client, start_date, end_date):
+        articles = Article.objects.filter(client=client, excluded=False, validation_status="ACCEPTED", published_at__date__range=(start_date, end_date))
+        return deduplicate_articles_for_display(articles.order_by("published_at", "id"))
+
+    @staticmethod
+    def _comparison_dataframe(first_label, first_count, second_label, second_count):
+        difference = second_count - first_count
+        variation = "N/A" if first_count == 0 else f"{(difference / first_count) * 100:.1f}%"
+        return pd.DataFrame([{"Primeiro periodo": first_label, "Quantidade": first_count, "Segundo periodo": second_label, "Quantidade do segundo periodo": second_count, "Diferenca": difference, "Variacao": variation}])
+
+    def _build_quantitative_content(self, dataframe, output_format, title, now):
+        output = BytesIO()
+        if output_format == "csv":
+            return dataframe.to_csv(index=False).encode("utf-8-sig")
+        if output_format == "xlsx":
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                dataframe.to_excel(writer, index=False, sheet_name="Resumo")
+                worksheet = writer.sheets["Resumo"]
+                max_row, max_col = dataframe.shape
+                worksheet.add_table(0, 0, max_row, max_col - 1, {"columns": [{"header": heading} for heading in dataframe.columns], "style": "Table Style Medium 9"})
+                for index, column in enumerate(dataframe.columns):
+                    width = max(dataframe[column].astype(str).map(len).max(), len(column)) + 2
+                    worksheet.set_column(index, index, min(width, 35))
+            return output.getvalue()
+
+        styles = getSampleStyleSheet()
+        document = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=1 * cm, leftMargin=1 * cm, topMargin=1 * cm, bottomMargin=1 * cm, title=title)
+        table_data = [list(dataframe.columns)] + dataframe.astype(str).values.tolist()
+        table = Table(table_data, repeatRows=1)
+        table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2457A6")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#B8C2CC")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+        document.build([Paragraph(html.escape(title), styles["Title"]), Paragraph(f"Gerado em: {now.strftime('%d/%m/%Y %H:%M')}", styles["BodyText"]), Spacer(1, 0.4 * cm), table])
+        return output.getvalue()
 
     def _build_content(self, dataframe, data, output_format, client, days, now):
         output = BytesIO()

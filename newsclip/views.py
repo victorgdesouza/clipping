@@ -931,18 +931,28 @@ def generate_report_view(request, client_id):
 
     form = ReportForm(request.POST)
     if form.is_valid():
-        days_str = form.cleaned_data["days"]
+        report_type = form.cleaned_data["report_type"]
         out_format = form.cleaned_data["out_format"]
-        label_period = f"ultimos {days_str} dias" if days_str != "all" else "todas as noticias"
+        start_date = form.cleaned_data["start_date"]
+        end_date = form.cleaned_data["end_date"]
+        command_options = {
+            "client_id": client_id,
+            "format": out_format,
+            "created_by_id": request.user.pk,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        }
+        if report_type == "comparative":
+            command_options.update(
+                comparison_start_date=form.cleaned_data["comparison_start_date"].isoformat(),
+                comparison_end_date=form.cleaned_data["comparison_end_date"].isoformat(),
+            )
+            label_period = "comparativo entre dois periodos"
+        else:
+            label_period = f"personalizado de {start_date.strftime('%d/%m/%Y')} a {end_date.strftime('%d/%m/%Y')}"
 
         try:
-            call_command(
-                "generate_report",
-                client_id=client_id,
-                days=days_str,
-                format=out_format,
-                created_by_id=request.user.pk,
-            )
+            call_command("generate_report", **command_options)
             messages.success(
                 request,
                 f"Relatorio ({label_period}, formato {out_format.upper()}) para '{client.name}' gerado com sucesso.",
